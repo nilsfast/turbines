@@ -1,11 +1,8 @@
-#Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 
-# C extensions
-*.so
 
-# Distribution / packaging
+dist
 bin/
 build/
 develop-eggs/
@@ -19,6 +16,7 @@ var/
 *.egg-info/
 .installed.cfg
 *.egg
+turbines.egg-info
 
 # Installer logs
 pip-log.txt
@@ -42,10 +40,7 @@ coverage.xml
 # Rope
 .ropeproject
 
-# Django stuff:
-*.log
-*.pot
-
 # Sphinx documentation
 docs/_build/
 
+.gitignore
