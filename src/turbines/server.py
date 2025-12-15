@@ -1,15 +1,9 @@
-import http.server
-import socketserver
 import os
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 import time
 import multiprocessing
 from turbines.builder import Builder
-import threading
-import asyncio
-import websockets
-from websockets.exceptions import ConnectionClosed
 
 
 def start_watching(builder: Builder):
@@ -75,7 +69,7 @@ class ChangeHandler(FileSystemEventHandler):
         self.loop = loop
 
     def on_modified(self, event):
-        if event.src_path.endswith(".html"):
+        if str(event.src_path).endswith(".html"):
             print(
                 f"File changed: {event.src_path}, notifying clients to reload...",
                 id(CLIENTS),
