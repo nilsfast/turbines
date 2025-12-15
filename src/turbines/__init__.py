@@ -15,14 +15,17 @@ def create(path: Path):
 @app.command()
 def build():
     """Render pages to the build folder."""
-    builder.build_site()
+
+    _builder = builder.Builder()
+    _builder.load()
+    _builder.build_site()
 
 
 @app.command()
 def serve():
     """Run local server with hot-reloading."""
-    server.start_watching()
-    server.run_server()
+
+    server.run_server(watch=True)
 
 
 def main() -> None:
