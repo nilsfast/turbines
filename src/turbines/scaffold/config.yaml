@@ -1,20 +1,17 @@
-# ==================================
-# Turbines Site Configuration
-# ==================================
+# Turbines Example Site Configuration
 
-# --- General Site Settings ---
 site:
     # The base URL for your deployed site. Required for sitemap and absolute links.
     url: "http://localhost"
     # Optional: The title used in base templates and metadata.
+    # If set, it can be accessed in templates via {{site.title}}.
     title: "Example Turbines Project"
     # The output directory for the built static files. (Default is 'dist')
     output_dir: "dist"
     # The directory where your content pages are located. (Default is 'pages')
     pages_dir: "pages"
 
-# --- Context Variables ---
-# Variables listed here are available globally in all templates.
+# Context variables are available globally in all templates via {{context.<var>}}.
 context:
     copyright_year: 2025
     theme_color: "#1a5a8f"
