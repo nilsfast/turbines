@@ -135,41 +135,18 @@ class StaticFileHandlerWithReload(tornado.web.StaticFileHandler):
         return content
 
     async def get(self, path, include_body=True):
-        print("requested", path)
-        # if the path ends with / or is empty, serve index.html of the corresponding directory
         if path == "" or path.endswith("/"):
             path = os.path.join(path, str("index.html"))
+        elif path.endswith(".html"):
+            pass
         else:
-            path = os.path.abspath(path)
-        print("Serving with reload:", path)
-
-        # check if its a file that exists
-
-        if not os.path.exists(path):
-            # return 404
-            self.set_status(404)
-            self.write("404: File not found")
-            await self.flush()
+            await super().get(path, include_body)
             return
 
-        if not os.path.isfile(path):
-            self.set_status(404)
-            self.write("404: Not a file")
-            await self.flush()
-            return
-
-        extension = os.path.splitext(path)[1]
-        mime_type = MIME_TYPES.get(extension, "application/octet-stream")
-
-        self.set_header("Content-Type", mime_type)
-
-        print("Reading file for reload injection:", path, extension)
-
-        with open(path, "r", encoding="utf-8") as f:
+        with open(path, "r") as f:
             content = f.read()
-            if extension == ".html":
-                print("Injecting reload script for:", path)
-                content = self._inject_reload_script(content)
+            self.set_header("Content-Type", "text/html; charset=UTF-8")
+            content = self._inject_reload_script(content)
             self.write(content)
             await self.flush()
 
