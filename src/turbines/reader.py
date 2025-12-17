@@ -38,7 +38,7 @@ class MarkdownReader(BaseReader):
 
         with open(filepath, "r", encoding="utf-8") as f:
             md_content = f.read()
-        md = markdown.Markdown(extensions=["meta"])
+        md = markdown.Markdown(extensions=["meta", "extra", "toc"])
         html_content = md.convert(md_content)
 
         metadata = {}

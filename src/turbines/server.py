@@ -1,48 +1,10 @@
 import os
+import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
-import time
-import multiprocessing
 from turbines.builder import Builder
 
-
-def start_watching(builder: Builder):
-    def watch():
-        path = os.path.join(os.getcwd())
-        print(f"Watching for changes in {path} ...")
-
-        class ChangeHandler(FileSystemEventHandler):
-            def __init__(self, *args, **kwargs):
-                super().__init__(*args, **kwargs)
-                self._last_built = 0
-                self._debounce_seconds = 1
-
-            # on save, rebuild the site
-            def on_modified(self, event):
-                if not event.is_directory:
-                    now = time.time()
-                    if now - self._last_built > self._debounce_seconds:
-                        print(f"Rebuilding site due to change in {event.src_path} ...")
-                        # call build_site from builder.py
-                        builder.reload()
-                        self._last_built = now
-
-        event_handler = ChangeHandler()
-        observer = Observer()
-        observer.schedule(event_handler, path=path, recursive=True)
-        observer.start()
-        try:
-            while True:
-                time.sleep(1)
-        except KeyboardInterrupt:
-            observer.stop()
-        observer.join()
-
-    p = multiprocessing.Process(target=watch)
-    p.start()
-    return p
-
-
+import threading
 import tornado.ioloop
 import tornado.web
 import tornado.websocket
@@ -50,52 +12,108 @@ import tornado.httpserver
 
 
 CLIENTS = []
+LIVE_RELOAD_SCRIPT = None
 
 
-def notify_reload():
-    print("Notifying clients to reload...", CLIENTS, id(CLIENTS))
+def make_reload_script(host: str, port: int) -> str:
+    return f"""
+<script>
+
+    function connectWebSocket() {{
+        let ws = new WebSocket("ws://{host}:{port}/_turbines/livereload");
+        ws.onmessage = (event) => {{
+            if (event.data === "reload") {{
+                console.log("Reload message received, reloading page...");
+                window.location.reload();
+            }} 
+            
+        }};
+        ws.onopen = () => {{
+            console.log("LiveReload WebSocket connection established.");
+        }};
+        ws.onclose = () => {{
+            console.log("LiveReload WebSocket connection closed, reconnecting in 1s...");
+            setTimeout(connectWebSocket, 5000);
+        }};
+    }}
+    connectWebSocket();
+</script>
+"""
+
+
+def notify_client_refresh():
+    # print("Notifying clients to reload...")
     for client in list(CLIENTS):
-        print("Notifying client to reload:", client)
         try:
             client.write_message("reload")
-            print("Reload message sent to client:", client)
         except:
             CLIENTS.remove(client)
-            print("Removed disconnected client:", client)
 
 
 class ChangeHandler(FileSystemEventHandler):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._dist_path = os.path.abspath("dist")
+        self._debounce_timer = None
+        self._debounce_delay = 0.3  # seconds
+
     def set_loop(self, loop):
-        self.loop = loop
+        self.__loop = loop
+
+    def set_builder_ref(self, builder: Builder):
+        self._builder = builder
+
+    def _handle_change(self, path):
+
+        # Ignore changes in the dist directory
+        if path.startswith(self._dist_path):
+            return
+
+        print(f"File change detected in {path}, scheduling reload notification...")
+
+        load_static = True if "static" in path else False
+
+        if self.__loop:
+            self._builder.reload(
+                load_static=load_static,
+            )
+            self.__loop.add_callback(notify_client_refresh)
 
     def on_modified(self, event):
-        if str(event.src_path).endswith(".html"):
-            print(
-                f"File changed: {event.src_path}, notifying clients to reload...",
-                id(CLIENTS),
-            )
-            self.loop.add_callback(notify_reload)
-            print("Notification scheduled.")
+        path = os.path.abspath(event.src_path)
+        if event.is_directory:
+            return
+        if self._debounce_timer:
+            self._debounce_timer.cancel()
+        self._debounce_timer = threading.Timer(
+            self._debounce_delay, self._handle_change, args=(path,)
+        )
+        self._debounce_timer.start()
 
 
 class LiveReloadWebSocketHandler(tornado.websocket.WebSocketHandler):
 
     def open(self, *args, **kwargs):
-        print("LiveReload client connected", id(CLIENTS))
+        # print("LiveReload client connected.")
         CLIENTS.append(self)
 
-        print("Current clients:", CLIENTS)
-
     def on_close(self):
-        print("LiveReload client disconnected")
         CLIENTS.remove(self)
 
     def on_message(self, message: str | bytes):
-        print(f"Received message from client: {message}")
+
         pass
 
     def check_origin(self, origin: str) -> bool:
         return True  # Allow connections from any origin
+
+
+class StaticFileHandler(tornado.web.StaticFileHandler):
+    async def get(self, path, include_body=True):
+        # Serve /index.html for root or empty path
+        if path == "" or path == "/":
+            path = "index.html"
+        await super().get(path, include_body)
 
 
 class StaticFileHandlerWithReload(tornado.web.StaticFileHandler):
@@ -105,14 +123,15 @@ class StaticFileHandlerWithReload(tornado.web.StaticFileHandler):
             path = "index.html"
         absolute_path = self.get_absolute_path(self.root, path)
         if path.endswith(".html") and os.path.exists(absolute_path):
-            print("Injecting LiveReload script into", path)
+            # print("Injecting LiveReload script into", path)
             with open(absolute_path, "r", encoding="utf-8") as f:
                 html = f.read()
             # Inject the reload script before </body> if present, else at the end
+            assert LIVE_RELOAD_SCRIPT is not None, "LIVE_RELOAD_SCRIPT is not set!"
             if "</body>" in html:
-                html = html.replace("</body>", RELOAD_SCRIPT + "</body>")
+                html = html.replace("</body>", LIVE_RELOAD_SCRIPT + "</body>")
             else:
-                html += RELOAD_SCRIPT
+                html += LIVE_RELOAD_SCRIPT
             self.set_header("Content-Type", "text/html; charset=UTF-8")
             self.write(html)
             await self.flush()
@@ -127,74 +146,54 @@ class TurbineServer:
         self.builder.load()
         self.builder.build_site()
 
-    def patch_builder_for_reload(self):
-        orig_reload = self.builder.reload
-
-        def patched_reload():
-            orig_reload()
-            print("Notifying LiveReload clients to reload...", CLIENTS)
-            for client in CLIENTS:
-                print("Sending reload message to client", client)
-                client.write_message("reload")
-
-        self.builder.reload = patched_reload
-
-    def serve(self):
-        PORT = 8000
+    def serve(self, host: str, port: int):
         os.chdir(self.builder.build_path)
-        print(f"Serving '{self.builder.build_path}' at http://localhost:{PORT} ...")
+        print(f"Serving '{self.builder.build_path}' at http://{host}:{port} ...")
         print("Do not use in production!")
+
+        # set up live reload script
+        global LIVE_RELOAD_SCRIPT
+        LIVE_RELOAD_SCRIPT = make_reload_script(host, port)
+
+        handler = StaticFileHandlerWithReload
+        if not self.watch:
+            handler = StaticFileHandler
 
         self.app = tornado.web.Application(
             [
                 (r"/_turbines/livereload", LiveReloadWebSocketHandler),
                 (
                     r"/(.*)",
-                    StaticFileHandlerWithReload,
+                    handler,
                     {"path": self.builder.build_path},
                 ),
             ]
         )
         server = tornado.httpserver.HTTPServer(self.app)
-        server.listen(PORT, address="127.0.0.1")
-        # tornado.ioloop.IOLoop.current().start()
+        server.listen(port, address=host)
 
-    def run(self):
+    def run(self, host: str = "localhost", port: int = 8000):
         loop = tornado.ioloop.IOLoop.current()
+        observer = None
         if self.watch:
-
             observer = Observer()
             handler = ChangeHandler()
             handler.set_loop(loop)
+            handler.set_builder_ref(self.builder)
             observer.schedule(handler, path=os.path.join(os.getcwd()), recursive=True)
             observer.start()
         try:
-            self.serve()
+            self.serve(host, port)
             tornado.ioloop.IOLoop.current().start()
         finally:
-            observer.stop()
-            observer.join()
+            if observer is not None:
+                observer.stop()
+                observer.join()
 
 
-def run_server(watch: bool = False):
+def run_server(watch: bool = False, host: str = "localhost", port: int = 8000):
     server = TurbineServer(watch=watch)
-    server.run()
-
-
-RELOAD_SCRIPT = """
-<script>
-    const ws = new WebSocket("ws://localhost:8000/_turbines/livereload");
-    ws.onmessage = (event) => {
-        if (event.data === "reload") {
-            console.log("Reload message received, reloading page...");
-            window.location.reload();
-        }
-    };
-    ws.onopen = () => {
-        console.log("LiveReload WebSocket connection established.");
-    };
-    ws.onclose = () => {
-        console.log("LiveReload WebSocket connection closed.");
-    };
-</script>
-"""
+    server.run(
+        host=host,
+        port=port,
+    )

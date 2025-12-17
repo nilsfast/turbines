@@ -1,12 +1,9 @@
 import os
 import shutil
+from datetime import datetime
 from typing import Type
 from jinja2 import Environment, FileSystemLoader, select_autoescape
-import yaml
-
-from datetime import datetime
 from jinja2_simple_tags import StandaloneTag
-import hashlib
 
 from turbines.config_loader import AppConfig, ConfigLoader
 from turbines.reader import BaseReader, HTMLReader, MarkdownReader
@@ -57,7 +54,9 @@ class Builder:
         self.build_path = os.path.join(os.getcwd(), self.config.site.output_dir)
         os.makedirs(self.build_path, exist_ok=True)
 
-        self.load_static(self.config.site.static_dir)
+        self.static_path = os.path.join(os.getcwd(), self.config.site.static_dir)
+
+        self.load_static(self.static_path)
         self.load_templates(self.config.site.templates_dir)
         self.load_pages(self.config.site.pages_dir)
 
@@ -67,16 +66,16 @@ class Builder:
         self.global_context = self.config.context or {}
 
     def load_config(self):
-        config_path = os.path.join(os.getcwd(), "config.yaml")
+        self.config_path = os.path.join(os.getcwd(), "config.yaml")
 
-        if os.path.isfile(config_path):
+        if os.path.isfile(self.config_path):
             print("Found config.yml")
         else:
             print("config.yml not found")
 
         try:
-            config = ConfigLoader.load(config_path)
-        except Exception as e:
+            config = ConfigLoader.load(self.config_path)
+        except RuntimeError as e:
             print(f"Error loading config: {e}")
             raise e
 
@@ -88,7 +87,7 @@ class Builder:
             for filename in files:
                 file_path = os.path.join(root, filename)
                 # For now, just print the page paths
-                print(f"Found page: {os.path.relpath(file_path, pages_path)}")
+                # print(f"Found page: {os.path.relpath(file_path, pages_path)}")
 
     def load_static(self, static_path):
         # Copy static files to <build_path>/static
@@ -99,8 +98,9 @@ class Builder:
     def load_templates(self, templates_path):
         pass
 
-    def reload(self):
-        print("Reloading configuration and rebuilding site...")
+    def reload(self, load_static: bool = False):
+        if load_static:
+            self.load_static(self.static_path)
         self.build_site()
 
     def build_site(self):
@@ -115,7 +115,10 @@ class Builder:
         )
 
         env.globals["context"] = self.global_context
-        env.globals["site_title"] = self.config.site.title
+        env.globals["site"] = {
+            "title": self.config.site.title,
+            "url": self.config.site.url,
+        }
 
         # add the now tag
         env.add_extension(NowExtension)
@@ -159,4 +162,4 @@ class Builder:
 
                 with open(output_path, "w", encoding="utf-8") as out_f:
                     out_f.write(rendered)
-                print(f"Rendered {os.path.relpath(file_path, self.pages_path)}")
+                print(f"    Rendered {os.path.relpath(file_path, self.pages_path)}")
