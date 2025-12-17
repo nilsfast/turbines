@@ -13,6 +13,16 @@ import tornado.httpserver
 
 CLIENTS = []
 LIVE_RELOAD_SCRIPT = None
+MIME_TYPES = {
+    ".html": "text/html; charset=UTF-8",
+    ".css": "text/css; charset=UTF-8",
+    ".js": "application/javascript; charset=UTF-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".svg": "image/svg+xml",
+}
 
 
 def make_reload_script(host: str, port: int) -> str:
@@ -111,32 +121,57 @@ class LiveReloadWebSocketHandler(tornado.websocket.WebSocketHandler):
 class StaticFileHandler(tornado.web.StaticFileHandler):
     async def get(self, path, include_body=True):
         # Serve /index.html for root or empty path
-        if path == "" or path == "/":
-            path = "index.html"
         await super().get(path, include_body)
 
 
 class StaticFileHandlerWithReload(tornado.web.StaticFileHandler):
-    async def get(self, path, include_body=True):
-        # Serve /index.html for root or empty path
-        if path == "" or path == "/":
-            path = "index.html"
-        absolute_path = self.get_absolute_path(self.root, path)
-        if path.endswith(".html") and os.path.exists(absolute_path):
-            # print("Injecting LiveReload script into", path)
-            with open(absolute_path, "r", encoding="utf-8") as f:
-                html = f.read()
-            # Inject the reload script before </body> if present, else at the end
-            assert LIVE_RELOAD_SCRIPT is not None, "LIVE_RELOAD_SCRIPT is not set!"
-            if "</body>" in html:
-                html = html.replace("</body>", LIVE_RELOAD_SCRIPT + "</body>")
-            else:
-                html += LIVE_RELOAD_SCRIPT
-            self.set_header("Content-Type", "text/html; charset=UTF-8")
-            self.write(html)
-            await self.flush()
+
+    def _inject_reload_script(self, content: str) -> str:
+        assert LIVE_RELOAD_SCRIPT is not None, "LIVE_RELOAD_SCRIPT is not set!"
+        if "</body>" in content:
+            content = content.replace("</body>", LIVE_RELOAD_SCRIPT + "</body>")
         else:
-            await super().get(path, include_body)
+            content += LIVE_RELOAD_SCRIPT
+        return content
+
+    async def get(self, path, include_body=True):
+        print("requested", path)
+        # if the path ends with / or is empty, serve index.html of the corresponding directory
+        if path == "" or path.endswith("/"):
+            path = os.path.join(path, str("index.html"))
+        else:
+            path = os.path.abspath(path)
+        print("Serving with reload:", path)
+
+        # check if its a file that exists
+
+        if not os.path.exists(path):
+            # return 404
+            self.set_status(404)
+            self.write("404: File not found")
+            await self.flush()
+            return
+
+        if not os.path.isfile(path):
+            self.set_status(404)
+            self.write("404: Not a file")
+            await self.flush()
+            return
+
+        extension = os.path.splitext(path)[1]
+        mime_type = MIME_TYPES.get(extension, "application/octet-stream")
+
+        self.set_header("Content-Type", mime_type)
+
+        print("Reading file for reload injection:", path, extension)
+
+        with open(path, "r", encoding="utf-8") as f:
+            content = f.read()
+            if extension == ".html":
+                print("Injecting reload script for:", path)
+                content = self._inject_reload_script(content)
+            self.write(content)
+            await self.flush()
 
 
 class TurbineServer:
@@ -165,7 +200,7 @@ class TurbineServer:
                 (
                     r"/(.*)",
                     handler,
-                    {"path": self.builder.build_path},
+                    {"path": self.builder.build_path, "default_filename": "index.html"},
                 ),
             ]
         )
@@ -186,14 +221,11 @@ class TurbineServer:
             self.serve(host, port)
             tornado.ioloop.IOLoop.current().start()
         finally:
-            if observer is not None:
+            if observer:
                 observer.stop()
                 observer.join()
 
 
 def run_server(watch: bool = False, host: str = "localhost", port: int = 8000):
     server = TurbineServer(watch=watch)
-    server.run(
-        host=host,
-        port=port,
-    )
+    server.run(host, port)
