@@ -1,9 +1,9 @@
 [project]
 name = "turbines"
 version = "0.1.0"
-description = "Add your description here"
+description = "A simple static site generator with live reload"
 readme = "README.md"
-authors = [{ name = "nfast", email = "mail@nilsfast.com" }]
+authors = [{ name = "nfast", email = "turbines@nilsfast.com" }]
 requires-python = ">=3.12"
 dependencies = [
     "jinja2>=3.1.6",
