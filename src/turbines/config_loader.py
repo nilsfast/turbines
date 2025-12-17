@@ -13,27 +13,8 @@ class SiteConfig(BaseModel):
     templates_dir: str = "templates"
 
 
-class UrlsConfig(BaseModel):
-    prettify: bool = False
-
-
-class AssetsConfig(BaseModel):
-    optimize_extensions: list[str] = []
-    fingerprint_extensions: list[str] = []
-
-
-class BlogConfig(BaseModel):
-    content_path: str
-    default_author: str
-    date_format: str
-    posts_per_page: int
-
-
 class AppConfig(BaseModel):
     site: SiteConfig
-    urls: UrlsConfig | None = None
-    assets: AssetsConfig | None = None
-    blog: BlogConfig | None = None
     context: dict[str, Any] = {}
 
 
