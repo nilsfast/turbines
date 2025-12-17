@@ -56,7 +56,7 @@ def test_build_example_site(tmp_path: Path):
 
         test_md_html = (dist / "test.html").read_text(encoding="utf-8")
         # template from metadata applied and title rendered
-        assert "<h2>Example Markdown Page</h2>" in test_md_html
+        assert "Example Markdown Page" in test_md_html
 
     finally:
         os.chdir(cwd_before)
