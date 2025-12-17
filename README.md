@@ -1,6 +1,6 @@
 # turbines
 
-A static site generator built with Jina2.
+A static site generator built with Jinja2.
 
 Inspired by [Cactus](https://github.com/koenbok/Cactus), a project that is no longer maintained.
 
