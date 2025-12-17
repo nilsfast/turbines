@@ -74,7 +74,13 @@ class Builder:
         else:
             print("config.yml not found")
 
-        return ConfigLoader.load(config_path)
+        try:
+            config = ConfigLoader.load(config_path)
+        except Exception as e:
+            print(f"Error loading config: {e}")
+            raise e
+
+        return config
 
     def load_pages(self, pages_path):
 
@@ -108,7 +114,8 @@ class Builder:
             autoescape=select_autoescape(["html", "xml"]),
         )
 
-        env.globals.update(self.global_context)
+        env.globals["context"] = self.global_context
+        env.globals["site_title"] = self.config.site.title
 
         # add the now tag
         env.add_extension(NowExtension)

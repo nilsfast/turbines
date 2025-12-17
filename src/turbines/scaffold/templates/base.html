@@ -1,0 +1,16 @@
+<html>
+    <head>
+        <title>{{ title }}</title>
+    </head>
+    <body>
+        <header>
+            <p>Welcome to {{ site_title }}</p>
+        </header>
+        <main>{% block content %}{% endblock %}</main>
+        <footer>
+            {% block footer %}
+            <p>&copy; {{context.copy_year}}</p>
+            {% endblock %}
+        </footer>
+    </body>
+</html>

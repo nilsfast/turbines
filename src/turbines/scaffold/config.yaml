@@ -1,0 +1,50 @@
+# ==================================
+# Turbines Site Configuration
+# ==================================
+
+# --- General Site Settings ---
+site:
+    # The base URL for your deployed site. Required for sitemap and absolute links.
+    url: "http://localhost"
+    # Optional: The title used in base templates and metadata.
+    title: "Example Turbines Project"
+    # The output directory for the built static files. (Default is 'dist')
+    output_dir: "dist"
+    # The directory where your content pages are located. (Default is 'pages')
+    pages_dir: "pages"
+
+# --- URL and Routing Features ---
+urls:
+    # Enable "pretty URLs" (e.g., /about.html becomes /about/)
+    prettify: true
+
+# --- Asset Pipeline Configuration ---
+assets:
+    # Enable optimization (minification) for listed extensions.
+    optimize_extensions:
+        - "js"
+        - "css"
+
+    # Enable asset fingerprinting (file hashing for cache-busting).
+    fingerprint_extensions:
+        - "js"
+        - "css"
+        - "jpg"
+        - "png"
+
+# --- Blog Plugin Configuration (Example) ---
+blog:
+    # The path where your blog content should appear.
+    content_path: "blog"
+    # The default author for posts that don't specify one in frontmatter.
+    default_author: "Turbines Contributor"
+    # The date format used to parse dates in post frontmatter.
+    date_format: "%Y-%m-%d"
+    # The number of posts to show per pagination page.
+    posts_per_page: 10
+
+# --- Context Variables ---
+# Variables listed here are available globally in all templates.
+context:
+    copyright_year: 2025
+    theme_color: "#1a5a8f"
