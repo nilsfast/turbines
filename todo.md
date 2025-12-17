@@ -1,1 +1,2 @@
 -   make logs pretty
+-   fix deleted files
