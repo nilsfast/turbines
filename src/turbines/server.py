@@ -72,6 +72,7 @@ class ChangeHandler(FileSystemEventHandler):
 
     def set_builder_ref(self, builder: Builder):
         self._builder = builder
+        self._dist_path = os.path.abspath(self._builder.build_path)
 
     def _handle_change(self, path):
 
