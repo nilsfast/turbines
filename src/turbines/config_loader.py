@@ -4,6 +4,16 @@ from typing import Any
 from pydantic import BaseModel, ValidationError
 
 
+class RobotsTxtConfig(BaseModel):
+    enable: bool = False
+    content: str | None = None
+
+
+class SitemapConfig(BaseModel):
+    enable: bool = False
+    use_index: bool = False
+
+
 class SiteConfig(BaseModel):
     url: str
     title: str | None = None
@@ -11,6 +21,8 @@ class SiteConfig(BaseModel):
     pages_dir: str = "pages"
     static_dir: str = "static"
     templates_dir: str = "templates"
+    robots_txt: RobotsTxtConfig = RobotsTxtConfig()
+    sitemap: SitemapConfig = SitemapConfig()
 
 
 class AppConfig(BaseModel):

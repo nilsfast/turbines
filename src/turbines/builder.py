@@ -6,6 +6,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 from jinja2_simple_tags import StandaloneTag
 
 from turbines.config_loader import AppConfig, ConfigLoader
+from turbines.index_tools import SitemapGenerator
 from turbines.reader import BaseReader, HTMLReader, MarkdownReader
 
 
@@ -65,6 +66,11 @@ class Builder:
 
         self.global_context = self.config.context or {}
 
+        # TODO temporary sitemap plugin setup
+        sitemap_plugin = SitemapGenerator(self.config)
+
+        self.plugins = [sitemap_plugin]
+
     def load_config(self):
         self.config_path = os.path.join(os.getcwd(), "config.yaml")
 
@@ -105,6 +111,10 @@ class Builder:
 
     def build_site(self):
 
+        # Run plugin before build hook
+        for plugin in self.plugins:
+            plugin.before_build()
+
         if self.config is None:
             raise RuntimeError("Config not loaded. Call load() before build_site().")
 
@@ -140,13 +150,13 @@ class Builder:
 
             for filename in files:
                 file_ext = os.path.splitext(filename)[-1].lower()
-                reader_class = READERS.get(file_ext)
+                ReaderClass = READERS.get(file_ext)
 
-                if not reader_class:
+                if not ReaderClass:
                     print(f"Skipping unsupported file type: {filename}")
                     continue
 
-                reader = reader_class()
+                reader = ReaderClass()
                 file_path = os.path.join(root, filename)
                 metadata, content = reader.read(file_path)
 
@@ -160,6 +170,20 @@ class Builder:
                 os.makedirs(output_dir, exist_ok=True)
                 output_path = os.path.join(output_dir, name_without_ext + ".html")
 
+                # Remove the build directory from output_path to get the query_path
+                query_path = os.path.relpath(output_path, self.build_path)
+
+                for plugin in self.plugins:
+                    rendered = plugin.after_page_render(
+                        file_path, query_path, metadata, rendered
+                    )
+
                 with open(output_path, "w", encoding="utf-8") as out_f:
                     out_f.write(rendered)
-                print(f"    Rendered {os.path.relpath(file_path, self.pages_path)}")
+                print(
+                    f"    Rendered {os.path.relpath(file_path, self.pages_path)} -> {query_path}"
+                )
+
+        # Run plugin after build hook
+        for plugin in self.plugins:
+            plugin.after_build()
