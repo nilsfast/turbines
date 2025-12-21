@@ -36,6 +36,10 @@ class SitemapGenerator(PluginBase):
     def after_page_render(
         self, page_path: str, query_path: str, metadata: dict, content: str
     ) -> str:
+
+        if metadata.get("noindex", False):
+            return content
+
         site_url = self.config.site.url.rstrip("/")
 
         page_url = f"{site_url}/{query_path.lstrip('/')}"
