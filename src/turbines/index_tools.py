@@ -11,7 +11,7 @@ class PluginBase:
     def before_build(self):
         pass
 
-    def after_build(self):
+    def after_build(self, output_dir: str):
         pass
 
     def after_page_render(
@@ -48,13 +48,11 @@ class SitemapGenerator(PluginBase):
         self._urls.append(page_url)
         return content
 
-    def after_build(self):
+    def after_build(self, output_dir: str):
         if not self.config.site.sitemap.enable:
             return
 
-        sitemap_path = os.path.join(
-            os.getcwd(), self.config.site.output_dir, "sitemap.xml"
-        )
+        sitemap_path = os.path.join(output_dir, "sitemap.xml")
         with open(sitemap_path, "w", encoding="utf-8") as f:
             f.write(
                 '<?xml version="1.0" encoding="UTF-8"?>\n<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
@@ -66,9 +64,7 @@ class SitemapGenerator(PluginBase):
 
         # Generate Robots.txt with the content specified and the sitemap
         if self.config.site.robots_txt.enable:
-            robots_path = os.path.join(
-                os.getcwd(), self.config.site.output_dir, "robots.txt"
-            )
+            robots_path = os.path.join(output_dir, "robots.txt")
             with open(robots_path, "w", encoding="utf-8") as f:
                 if self.config.site.robots_txt.content:
                     f.write(self.config.site.robots_txt.content + "\n")

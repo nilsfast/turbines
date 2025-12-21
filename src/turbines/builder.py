@@ -186,4 +186,4 @@ class Builder:
 
         # Run plugin after build hook
         for plugin in self.plugins:
-            plugin.after_build()
+            plugin.after_build(self.build_path)
