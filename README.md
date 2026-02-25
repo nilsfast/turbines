@@ -49,12 +49,12 @@ Templates are written in Jinja2. You can use any Jinja2 syntax in your templates
 
 The `site` variable is available in all templates and contains information about the site current site, such as the `url` and the `title`.
 The `pages` variable is also available and contains a map of tags and the pages that have those tags.
-For example, `pages.tages.articles` would give you a list of all pages that have the `articles` tag.
+For example, `pages.tags.articles` would give you a list of all pages that have the `articles` tag.
 The `context` variable contains the context set in `config.yaml`.
 
 ### Functions
 
-The `url_for` function is available in all templates and can be used to generate URLs for pages. For example, `{% url "test.md" %}` would give you the URL for the page generated from `test.md`.
+The `url` function is available in all templates and can be used to generate URLs for pages. For example, `{% url "test.md" %}` would give you the URL for the page generated from `test.md`.
 
 The `static` function is also available and can be used to generate URLs for static files. For example, `{% static "style.css" %}` would give you the URL for the `style.css` file in the `static` directory.
 

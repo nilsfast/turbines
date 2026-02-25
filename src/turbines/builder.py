@@ -25,9 +25,17 @@ class StaticFileExtension(StandaloneTag):
         return f"/static/{filename}"
 
 
+class URLExtension(StandaloneTag):
+    tags = {"url"}
+
+    def render(self, path):
+        return self.environment.globals["_turbines_url_map"][path]
+
+
 @dataclass
 class Page:
     file_path: str
+    rel_file_path: str
     metadata: dict
     content: str
     output_path: str
@@ -109,6 +117,8 @@ class Builder:
 
     def load_pages(self, pages_path):
         self.pages = []
+        self.tag_lists = {}
+
         page_count = 0
         for root, _, files in os.walk(pages_path):
             # Get the relative path from the pages directory to preserve directory structure in output
@@ -135,9 +145,13 @@ class Builder:
                 query_path = os.path.relpath(output_path, self.build_path)
                 url = "/" + query_path.replace(os.sep, "/")
                 metadata["url"] = url
+                rel_file_path = os.path.relpath(file_path, self.pages_path).replace(
+                    os.sep, "/"
+                )
 
                 page = Page(
                     file_path=file_path,
+                    rel_file_path=rel_file_path,
                     metadata=metadata,
                     content=content,
                     output_path=output_path,
@@ -169,9 +183,9 @@ class Builder:
         pass
 
     def reload(self, load_static: bool = False):
+        self.load_pages(self.pages_path)
         if load_static:
             self.load_static(self.static_path)
-        self.load_pages(self.pages_path)
         self.render_pages()
 
     def _get_reader(self, filename) -> BaseReader:
@@ -212,11 +226,19 @@ class Builder:
             "url": self.config.site.url,
         }
 
-        env.globals["pages"] = {"tags": self.tag_lists}
+        env.globals["_turbines_url_map"] = {
+            page.rel_file_path: page.url for page in self.pages
+        }
+
+        env.globals["pages"] = {
+            "tags": self.tag_lists,
+            "all": [page.metadata for page in self.pages],
+        }
 
         # add the now tag
         env.add_extension(NowExtension)
         env.add_extension(StaticFileExtension)
+        env.add_extension(URLExtension)
 
         for page in self.pages:
             # create the rendered output using jinja from the content
