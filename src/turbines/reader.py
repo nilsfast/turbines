@@ -11,7 +11,6 @@ class BaseReader(ABC):
 
 
 class HTMLReader(BaseReader):
-
     def read(self, filepath) -> tuple[dict, str]:
         with open(filepath, "r", encoding="utf-8") as f:
             metadata = {}

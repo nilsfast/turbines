@@ -1,5 +1,4 @@
 import os
-import time
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler
 from turbines.builder import Builder
@@ -35,8 +34,8 @@ def make_reload_script(host: str, port: int) -> str:
             if (event.data === "reload") {{
                 console.log("Reload message received, reloading page...");
                 window.location.reload();
-            }} 
-            
+            }}
+
         }};
         ws.onopen = () => {{
             console.log("LiveReload WebSocket connection established.");
@@ -56,7 +55,8 @@ def notify_client_refresh():
     for client in list(CLIENTS):
         try:
             client.write_message("reload")
-        except:
+        except Exception as e:
+            print(f"Error notifying client: {e}")
             CLIENTS.remove(client)
 
 
@@ -75,7 +75,6 @@ class ChangeHandler(FileSystemEventHandler):
         self._dist_path = os.path.abspath(self._builder.build_path)
 
     def _handle_change(self, path):
-
         # Ignore changes in the dist directory
         if path.startswith(self._dist_path):
             return
@@ -103,7 +102,6 @@ class ChangeHandler(FileSystemEventHandler):
 
 
 class LiveReloadWebSocketHandler(tornado.websocket.WebSocketHandler):
-
     def open(self, *args, **kwargs):
         # print("LiveReload client connected.")
         CLIENTS.append(self)
@@ -112,7 +110,6 @@ class LiveReloadWebSocketHandler(tornado.websocket.WebSocketHandler):
         CLIENTS.remove(self)
 
     def on_message(self, message: str | bytes):
-
         pass
 
     def check_origin(self, origin: str) -> bool:
@@ -126,7 +123,6 @@ class StaticFileHandler(tornado.web.StaticFileHandler):
 
 
 class StaticFileHandlerWithReload(tornado.web.StaticFileHandler):
-
     def _inject_reload_script(self, content: str) -> str:
         assert LIVE_RELOAD_SCRIPT is not None, "LIVE_RELOAD_SCRIPT is not set!"
         if "</body>" in content:

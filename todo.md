@@ -1,2 +1,3 @@
--   make logs pretty
--   fix deleted files
+- make logs pretty
+- fix deleted files
+- add lists of files for blogs and so on

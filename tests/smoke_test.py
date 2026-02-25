@@ -2,8 +2,6 @@ import os
 import shutil
 from pathlib import Path
 
-import pytest
-
 from turbines.builder import Builder, scaffold
 
 
@@ -22,7 +20,6 @@ def test_build_example_site(tmp_path: Path):
     cwd_before = Path.cwd()
 
     try:
-
         scaffold(site_dir)
         os.chdir(site_dir)
 
@@ -35,19 +32,19 @@ def test_build_example_site(tmp_path: Path):
 
         # core outputs exist
         assert (dist / "index.html").is_file(), "index.html was not generated"
-        assert (
-            dist / "test.html"
-        ).is_file(), "Markdown page test.md not rendered to test.html"
+        assert (dist / "test.html").is_file(), (
+            "Markdown page test.md not rendered to test.html"
+        )
 
         # static files copied
         assert (dist / "static").is_dir(), "static directory not copied"
         # example has these files (may be empty but should exist)
-        assert (
-            dist / "static" / "style.css"
-        ).exists(), "style.css not found in output static"
-        assert (
-            dist / "static" / "script.js"
-        ).exists(), "script.js not found in output static"
+        assert (dist / "static" / "style.css").exists(), (
+            "style.css not found in output static"
+        )
+        assert (dist / "static" / "script.js").exists(), (
+            "script.js not found in output static"
+        )
 
         # spot-check rendered content
         index_html = (dist / "index.html").read_text(encoding="utf-8")

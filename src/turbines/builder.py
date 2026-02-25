@@ -43,7 +43,6 @@ def scaffold(path):
 
 
 class Builder:
-
     def __init__(self, inject_reload_script: bool = False):
         self.config: AppConfig | None = None
         self.static_files: dict[str, str] = {}
@@ -88,12 +87,11 @@ class Builder:
         return config
 
     def load_pages(self, pages_path):
-
         for root, _, files in os.walk(pages_path):
             for filename in files:
                 file_path = os.path.join(root, filename)
                 # For now, just print the page paths
-                # print(f"Found page: {os.path.relpath(file_path, pages_path)}")
+                print(f"Found page: {os.path.relpath(file_path, pages_path)}")
 
     def load_static(self, static_path):
         # Copy static files to <build_path>/static
@@ -110,7 +108,6 @@ class Builder:
         self.build_site()
 
     def build_site(self):
-
         # Run plugin before build hook
         for plugin in self.plugins:
             plugin.before_build()

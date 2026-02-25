@@ -1,8 +1,6 @@
 import os
 from turbines.config_loader import AppConfig
 
-from abc import ABC, abstractmethod
-
 
 class PluginBase:
     def __init__(self, config: AppConfig) -> None:
@@ -17,7 +15,6 @@ class PluginBase:
     def after_page_render(
         self, page_path: str, query_path, metadata: dict, content: str
     ) -> str:
-
         return content
 
     def before_page_render(self, page_path: str, content: str) -> str:
@@ -25,7 +22,6 @@ class PluginBase:
 
 
 class SitemapGenerator(PluginBase):
-
     def __init__(self, config: AppConfig) -> None:
         super().__init__(config)
         self._urls = []
@@ -36,7 +32,6 @@ class SitemapGenerator(PluginBase):
     def after_page_render(
         self, page_path: str, query_path: str, metadata: dict, content: str
     ) -> str:
-
         if metadata.get("noindex", False):
             return content
 
