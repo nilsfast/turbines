@@ -15,7 +15,7 @@ class SitemapConfig(BaseModel):
 
 
 class SiteConfig(BaseModel):
-    url: str
+    url: str = "http://localhost:8000"
     title: str | None = None
     output_dir: str = "dist"
     pages_dir: str = "pages"
@@ -26,21 +26,24 @@ class SiteConfig(BaseModel):
 
 
 class AppConfig(BaseModel):
-    site: SiteConfig
+    site: SiteConfig = SiteConfig()
     context: dict[str, Any] = {}
 
 
 class ConfigLoader:
     @staticmethod
     def load(path: str | Path) -> AppConfig:
-        with open(path, "r") as f:
-            data: dict[str, Any] = yaml.safe_load(f)
-            print(f"Loaded configuration from {path}")
-            print(data)
-
-        if data is None:
-            data = {}
-
+        data: dict[str, Any] = {}
+        try:
+            with open(path, "r") as f:
+                data = yaml.safe_load(f)
+                print(f"Loaded configuration from {path}")
+                print(data)
+        except FileNotFoundError:
+            print(f"Configuration file {path} not found. Using default configuration.")
+        except yaml.YAMLError as e:
+            raise RuntimeError(f"Error parsing configuration file: {e}")
+        
         try:
             return AppConfig(**data)
         except ValidationError as e:

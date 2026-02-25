@@ -73,10 +73,10 @@ class Builder:
     def load_config(self):
         self.config_path = os.path.join(os.getcwd(), "config.yaml")
 
-        if os.path.isfile(self.config_path):
-            print("Found config.yml")
-        else:
-            print("config.yml not found")
+        # if os.path.isfile(self.config_path):
+        #     print("Found config.yml")
+        # else:
+        #     print("config.yml not found")
 
         try:
             config = ConfigLoader.load(self.config_path)

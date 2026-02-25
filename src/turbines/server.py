@@ -12,22 +12,10 @@ import tornado.httpserver
 
 CLIENTS = []
 LIVE_RELOAD_SCRIPT = None
-MIME_TYPES = {
-    ".html": "text/html; charset=UTF-8",
-    ".css": "text/css; charset=UTF-8",
-    ".js": "application/javascript; charset=UTF-8",
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".gif": "image/gif",
-    ".svg": "image/svg+xml",
-}
-
 
 def make_reload_script(host: str, port: int) -> str:
     return f"""
 <script>
-
     function connectWebSocket() {{
         let ws = new WebSocket("ws://{host}:{port}/_turbines/livereload");
         ws.onmessage = (event) => {{
@@ -125,6 +113,7 @@ class StaticFileHandler(tornado.web.StaticFileHandler):
 class StaticFileHandlerWithReload(tornado.web.StaticFileHandler):
     def _inject_reload_script(self, content: str) -> str:
         assert LIVE_RELOAD_SCRIPT is not None, "LIVE_RELOAD_SCRIPT is not set!"
+        # TODO this is not very robust, but it should work for most cases. We can improve this later if needed.
         if "</body>" in content:
             content = content.replace("</body>", LIVE_RELOAD_SCRIPT + "</body>")
         else:
