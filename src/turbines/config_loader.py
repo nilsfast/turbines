@@ -43,7 +43,7 @@ class ConfigLoader:
             print(f"Configuration file {path} not found. Using default configuration.")
         except yaml.YAMLError as e:
             raise RuntimeError(f"Error parsing configuration file: {e}")
-        
+
         try:
             return AppConfig(**data)
         except ValidationError as e:

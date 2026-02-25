@@ -26,7 +26,7 @@ def test_build_example_site(tmp_path: Path):
         builder = Builder()
 
         builder.load()
-        builder.build_site()
+        builder.render_pages()
 
         dist = site_dir / (builder.config.site.output_dir if builder.config else "dist")
 

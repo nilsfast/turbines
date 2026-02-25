@@ -1,21 +1,24 @@
 import os
 from turbines.config_loader import AppConfig
+from abc import ABC, abstractmethod
 
 
-class PluginBase:
+class PluginBase(ABC):
     def __init__(self, config: AppConfig) -> None:
         self.config: AppConfig = config
 
     def before_build(self):
         pass
 
+    @abstractmethod
     def after_build(self, output_dir: str):
         pass
 
+    @abstractmethod
     def after_page_render(
         self, page_path: str, query_path, metadata: dict, content: str
     ) -> str:
-        return content
+        pass
 
     def before_page_render(self, page_path: str, content: str) -> str:
         return content

@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-
+import markdown
 import yaml
 
 
@@ -14,10 +14,8 @@ class HTMLReader(BaseReader):
     def read(self, filepath) -> tuple[dict, str]:
         with open(filepath, "r", encoding="utf-8") as f:
             metadata = {}
-            # if the start of the file is a yaml front matter, parse it
             first_line = f.readline()
             if first_line.strip() == "---":
-                # read until the next ---
                 front_matter_lines = []
                 for line in f:
                     if line.strip() == "---":
@@ -26,15 +24,13 @@ class HTMLReader(BaseReader):
                 front_matter = "".join(front_matter_lines)
                 metadata = yaml.safe_load(front_matter) or {}
             else:
-                f.seek(0)  # reset to start if no front matter
+                f.seek(0)
             content = f.read()
             return metadata, content
 
 
 class MarkdownReader(BaseReader):
     def read(self, filepath) -> tuple[dict, str]:
-        import markdown
-
         with open(filepath, "r", encoding="utf-8") as f:
             md_content = f.read()
         md = markdown.Markdown(extensions=["meta", "extra", "toc"])
@@ -47,10 +43,8 @@ class MarkdownReader(BaseReader):
             else:
                 metadata[key] = value
 
-        # Use Jinja2 template inheritance if 'template' is specified in metadata
         if "template" in metadata:
             template_name = metadata["template"]
-            # Use Jinja2 block for content and extends for template
             html_content = (
                 f"{{% extends '{template_name}' %}}\n"
                 "{% block content %}\n"

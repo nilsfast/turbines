@@ -18,7 +18,7 @@ def build():
 
     _builder = builder.Builder()
     _builder.load()
-    _builder.build_site()
+    _builder.render_pages()
 
 
 @app.command()

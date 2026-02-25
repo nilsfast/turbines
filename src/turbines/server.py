@@ -13,6 +13,7 @@ import tornado.httpserver
 CLIENTS = []
 LIVE_RELOAD_SCRIPT = None
 
+
 def make_reload_script(host: str, port: int) -> str:
     return f"""
 <script>
@@ -142,7 +143,7 @@ class TurbineServer:
         self.watch = watch
         self.builder = Builder(inject_reload_script=True)
         self.builder.load()
-        self.builder.build_site()
+        self.builder.render_pages()
 
     def serve(self, host: str, port: int):
         os.chdir(self.builder.build_path)
