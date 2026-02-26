@@ -23,6 +23,7 @@ class SiteConfig(BaseModel):
     templates_dir: str = "templates"
     robots_txt: RobotsTxtConfig = RobotsTxtConfig()
     sitemap: SitemapConfig = SitemapConfig()
+    truncate_urls: bool = False
 
 
 class AppConfig(BaseModel):
@@ -38,7 +39,6 @@ class ConfigLoader:
             with open(path, "r") as f:
                 data = yaml.safe_load(f)
                 print(f"Loaded configuration from {path}")
-                print(data)
         except FileNotFoundError:
             print(f"Configuration file {path} not found. Using default configuration.")
         except yaml.YAMLError as e:

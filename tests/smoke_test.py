@@ -2,7 +2,7 @@ import os
 import shutil
 from pathlib import Path
 
-from turbines.builder import Builder, scaffold
+from turbines.builder import Builder, initialize_directory
 
 
 def copy_example_to(tmp_path: Path) -> Path:
@@ -20,10 +20,10 @@ def test_build_example_site(tmp_path: Path):
     cwd_before = Path.cwd()
 
     try:
-        scaffold(site_dir)
+        initialize_directory(site_dir)
         os.chdir(site_dir)
 
-        builder = Builder()
+        builder = Builder(base_dir=str(site_dir))
 
         builder.load()
         builder.render_pages()

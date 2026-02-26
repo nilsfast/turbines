@@ -42,7 +42,7 @@ class Page:
     url: str
 
 
-def scaffold(path):
+def initialize_directory(path):
     # make a diretory in the specified path if it doesn't exist
     if not os.path.exists(path):
         os.makedirs(path)
@@ -68,39 +68,62 @@ READERS: dict[str, Type[BaseReader]] = {
 
 
 class Builder:
-    def __init__(self, inject_reload_script: bool = False):
-        self.config: AppConfig | None = None
+    def __init__(
+        self, base_dir: str = os.getcwd(), force_files_overwrite: bool = False
+    ):
+        self.base_dir: str = base_dir
         self.static_files: dict[str, str] = {}
-        self.inject_reload_script = inject_reload_script
         self.tag_lists: dict[str, list] = {}
         # pages is a list of tuples of (file_path, metadata, content)
         self.pages: list[Page] | None = None
 
-    def load(self):
-        self.config = self.load_config()
+        # Load config first
+        self.config: AppConfig = self.load_config()
 
-        self.build_path = os.path.join(os.getcwd(), self.config.site.output_dir)
+        # build path is the output directory for the generated site, default is <base_dir>/dist
+        self.build_path = os.path.join(self.base_dir, self.config.site.output_dir)
+
+        # Check if build directory exists and is not empty
+        if os.path.isdir(self.build_path) and force_files_overwrite:
+            print(
+                f"Force overwrite enabled. Clearing existing files in build directory '{self.build_path}'..."
+            )
+            shutil.rmtree(self.build_path)
+
+        # If not forcing overwrite, check if the build directory exists and is not empty, and raise an error if so
+        if not force_files_overwrite and os.listdir(self.build_path):
+            raise ValueError(
+                f"Build directory '{self.build_path}' is not empty. Use force_files_overwrite=True to overwrite."
+            )
+
+        # at this point the directory either doesn't exist or is empty, so we can safely create it
         os.makedirs(self.build_path, exist_ok=True)
 
-        self.static_path = os.path.join(os.getcwd(), self.config.site.static_dir)
-
-        self.load_static(self.static_path)
-        self.load_templates(self.config.site.templates_dir)
-
-        self.pages_path = os.path.join(os.getcwd(), self.config.site.pages_dir)
-        self.templates_path = os.path.join(os.getcwd(), self.config.site.templates_dir)
-
-        self.load_pages(self.config.site.pages_dir)
-
+        # static path is the directory for static files, default is <base_dir>/static
+        self.static_path = os.path.join(self.base_dir, self.config.site.static_dir)
+        # pages path is the directory for page source files, default is <base_dir>/pages
+        self.pages_path = os.path.join(self.base_dir, self.config.site.pages_dir)
+        # templates path is the directory for jinja2 templates, default is <base_dir>/templates
+        self.templates_path = os.path.join(
+            self.base_dir, self.config.site.templates_dir
+        )
+        # global context variables available in all templates via {{context.<var>}}
         self.global_context = self.config.context or {}
 
+    def load(self):
+        self.load_static(self.static_path)
+        self.load_templates(self.templates_path)
+        self.load_pages(self.pages_path)
+
+        self.load_plugins()
+
+    def load_plugins(self):
         # TODO temporary sitemap plugin setup
         sitemap_plugin = SitemapGenerator(self.config)
-
         self.plugins = [sitemap_plugin]
 
     def load_config(self):
-        self.config_path = os.path.join(os.getcwd(), "config.yaml")
+        self.config_path = os.path.join(self.base_dir, "config.yaml")
 
         # if os.path.isfile(self.config_path):
         #     print("Found config.yml")
@@ -183,10 +206,7 @@ class Builder:
         pass
 
     def reload(self, load_static: bool = False):
-        self.load_pages(self.pages_path)
-        if load_static:
-            self.load_static(self.static_path)
-        self.render_pages()
+        self.load()
 
     def _get_reader(self, filename) -> BaseReader:
         file_ext = os.path.splitext(filename)[-1].lower()

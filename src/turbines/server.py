@@ -70,12 +70,9 @@ class ChangeHandler(FileSystemEventHandler):
 
         print(f"File change detected in {path}, scheduling reload notification...")
 
-        load_static = True if "static" in path else False
-
         if self.__loop:
-            self._builder.reload(
-                load_static=load_static,
-            )
+            self._builder.load()
+            self._builder.render_pages()
             self.__loop.add_callback(notify_client_refresh)
 
     def on_modified(self, event):
@@ -105,16 +102,27 @@ class LiveReloadWebSocketHandler(tornado.websocket.WebSocketHandler):
         return True  # Allow connections from any origin
 
 
-class StaticFileHandler(tornado.web.StaticFileHandler):
-    async def get(self, path, include_body=True):
-        # Serve /index.html for root or empty path
-        await super().get(path, include_body)
+class CustomStaticFileHandler(tornado.web.StaticFileHandler):
+    """
+    Custom static file handler supporting live reload script injection and URL truncation.
+    Configure with:
+        - inject_reload_script: bool
+        - truncate_urls: bool
+    """
 
+    def initialize(
+        self,
+        path,
+        default_filename=None,
+        inject_reload_script=False,
+        truncate_urls=False,
+    ):
+        super().initialize(path=path, default_filename=default_filename)
+        self.inject_reload_script = inject_reload_script
+        self.truncate_urls = truncate_urls
 
-class StaticFileHandlerWithReload(tornado.web.StaticFileHandler):
     def _inject_reload_script(self, content: str) -> str:
         assert LIVE_RELOAD_SCRIPT is not None, "LIVE_RELOAD_SCRIPT is not set!"
-        # TODO this is not very robust, but it should work for most cases. We can improve this later if needed.
         if "</body>" in content:
             content = content.replace("</body>", LIVE_RELOAD_SCRIPT + "</body>")
         else:
@@ -122,26 +130,46 @@ class StaticFileHandlerWithReload(tornado.web.StaticFileHandler):
         return content
 
     async def get(self, path, include_body=True):
+        orig_path = path
+        # Handle URL truncation
         if path == "" or path.endswith("/"):
-            path = os.path.join(path, str("index.html"))
-        elif path.endswith(".html"):
-            pass
-        else:
-            await super().get(path, include_body)
+            path = os.path.join(path, "index.html")
+        elif self.truncate_urls:
+            # If extensionless, try .html
+            if not os.path.splitext(path)[1]:
+                html_path = path + ".html"
+                if os.path.exists(html_path):
+                    path = html_path
+                else:
+                    # Try index.html in directory
+                    index_path = os.path.join(path, "index.html")
+                    if os.path.exists(index_path):
+                        path = index_path
+
+        # If not HTML, serve as static
+        if not path.endswith(".html"):
+            await super().get(orig_path, include_body)
             return
 
-        with open(path, "r") as f:
+        # Serve HTML, possibly injecting reload script
+        abs_path = self.get_absolute_path(self.root, path)
+        if not os.path.exists(abs_path):
+            raise tornado.web.HTTPError(404)
+        with open(abs_path, "r", encoding="utf-8") as f:
             content = f.read()
             self.set_header("Content-Type", "text/html; charset=UTF-8")
-            content = self._inject_reload_script(content)
+            if self.inject_reload_script:
+                content = self._inject_reload_script(content)
             self.write(content)
             await self.flush()
 
 
 class TurbineServer:
-    def __init__(self, watch: bool = False):
+    def __init__(self, watch: bool = False, force_files_overwrite: bool = False):
         self.watch = watch
-        self.builder = Builder(inject_reload_script=True)
+        self.builder = Builder(
+            base_dir=os.getcwd(), force_files_overwrite=force_files_overwrite
+        )
         self.builder.load()
         self.builder.render_pages()
 
@@ -154,9 +182,12 @@ class TurbineServer:
         global LIVE_RELOAD_SCRIPT
         LIVE_RELOAD_SCRIPT = make_reload_script(host, port)
 
-        handler = StaticFileHandlerWithReload
-        if not self.watch:
-            handler = StaticFileHandler
+        handler = CustomStaticFileHandler
+
+        # Pass truncate_urls to handler
+        truncate_urls = False
+        if self.builder.config and hasattr(self.builder.config.site, "truncate_urls"):
+            truncate_urls = self.builder.config.site.truncate_urls
 
         self.app = tornado.web.Application(
             [
@@ -164,7 +195,12 @@ class TurbineServer:
                 (
                     r"/(.*)",
                     handler,
-                    {"path": self.builder.build_path, "default_filename": "index.html"},
+                    {
+                        "path": self.builder.build_path,
+                        "default_filename": "index.html",
+                        "truncate_urls": truncate_urls,
+                        "inject_reload_script": self.watch,
+                    },
                 ),
             ]
         )
@@ -181,6 +217,7 @@ class TurbineServer:
             handler.set_builder_ref(self.builder)
             observer.schedule(handler, path=os.path.join(os.getcwd()), recursive=True)
             observer.start()
+
         try:
             self.serve(host, port)
             tornado.ioloop.IOLoop.current().start()
@@ -190,6 +227,11 @@ class TurbineServer:
                 observer.join()
 
 
-def run_server(watch: bool = False, host: str = "localhost", port: int = 8000):
-    server = TurbineServer(watch=watch)
+def run_server(
+    watch: bool = False,
+    host: str = "localhost",
+    port: int = 8000,
+    force_files_overwrite: bool = False,
+):
+    server = TurbineServer(watch=watch, force_files_overwrite=force_files_overwrite)
     server.run(host, port)
