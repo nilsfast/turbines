@@ -91,7 +91,7 @@ class Builder:
             shutil.rmtree(self.build_path)
 
         # If not forcing overwrite, check if the build directory exists and is not empty, and raise an error if so
-        if not force_files_overwrite and os.listdir(self.build_path):
+        if os.path.isdir(self.build_path) and not force_files_overwrite:
             raise ValueError(
                 f"Build directory '{self.build_path}' is not empty. Use force_files_overwrite=True to overwrite."
             )
