@@ -11,5 +11,4 @@ site:
   pages_dir: "pages"
 # Context variables are available globally in all templates via {{context.<var>}}.
 context:
-  copyright_year: 2025
-  theme_color: "#1a5a8f"
+  copyright_year: 2026
