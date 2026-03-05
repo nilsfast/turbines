@@ -1,8 +1,19 @@
 import typer
 from pathlib import Path
-from turbines import builder, server
+from turbines import builder
+from turbines.server import TurbinesServer
+from turbines.logging_setup import setup_logging
+from importlib.metadata import version as get_version
+
+__version__ = get_version(__package__ or "turbines")
 
 app = typer.Typer()
+
+
+def version_callback(value: bool):
+    if value:
+        print(f"Turbines Version: {__version__}")
+        raise typer.Exit()
 
 
 @app.command()
@@ -48,9 +59,8 @@ def serve(
     """Run local server with hot-reloading."""
 
     try:
-        server.run_server(
-            watch=watch, host=host, port=port, force_files_overwrite=force
-        )
+        server = TurbinesServer(watch=watch, force_files_overwrite=force)
+        server.run(host, port)
     except ValueError as e:
         print(f"Error: {e}")
         print("Aborting server start to avoid overwriting files.")
@@ -58,4 +68,6 @@ def serve(
 
 
 def main() -> None:
+    print(f"Turbines Version {__version__}")
+    setup_logging("INFO")
     app()

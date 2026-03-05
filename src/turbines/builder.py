@@ -1,6 +1,8 @@
 import os
 import shutil
+import logging
 from datetime import datetime
+import time
 from typing import Type
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 from jinja2_simple_tags import StandaloneTag
@@ -9,6 +11,8 @@ from pydantic.dataclasses import dataclass
 from turbines.config_loader import AppConfig, ConfigLoader
 from turbines.index_tools import SitemapGenerator
 from turbines.reader import BaseReader, HTMLReader, MarkdownReader
+
+log = logging.getLogger(__name__)
 
 
 class NowExtension(StandaloneTag):
@@ -46,9 +50,9 @@ def initialize_directory(path):
     # make a diretory in the specified path if it doesn't exist
     if not os.path.exists(path):
         os.makedirs(path)
-        print(f"Created directory at {path}")
+        # print(f"Created directory at {path}")
     else:
-        print(f"Directory already exists at {path}")
+        log.info(f"Directory already exists at {path}")
 
     # copy ./scaffold to the specified path
     scaffold_src = os.path.join(os.path.dirname(__file__), "scaffold")
@@ -57,7 +61,7 @@ def initialize_directory(path):
     # copy the data from scaffold_src to scaffold_dst
 
     shutil.copytree(scaffold_src, scaffold_dst, dirs_exist_ok=True)
-    print(f"Copied scaffold to {path}")
+    log.info(f"Initialized site at {path}")
 
 
 READERS: dict[str, Type[BaseReader]] = {
@@ -76,18 +80,16 @@ class Builder:
         self.tag_lists: dict[str, list] = {}
         # pages is a list of tuples of (file_path, metadata, content)
         self.pages: list[Page] | None = None
-
         # Load config first
         self.config: AppConfig = self.load_config()
-
         # build path is the output directory for the generated site, default is <base_dir>/dist
         self.build_path = os.path.join(self.base_dir, self.config.site.output_dir)
 
         # Check if build directory exists and is not empty
         if os.path.isdir(self.build_path) and force_files_overwrite:
-            print(
-                f"Force overwrite enabled. Clearing existing files in build directory '{self.build_path}'..."
-            )
+            # log.info(
+            #     f"Force overwrite enabled. Clearing existing files in build directory {self.build_path}"
+            # )
             shutil.rmtree(self.build_path)
 
         # If not forcing overwrite, check if the build directory exists and is not empty, and raise an error if so
@@ -121,28 +123,21 @@ class Builder:
         # TODO temporary sitemap plugin setup
         sitemap_plugin = SitemapGenerator(self.config)
         self.plugins = [sitemap_plugin]
+        plugin_names = [plugin.name for plugin in self.plugins]
+        log.info(f"Loaded plugins: {', '.join(plugin_names)}")
 
     def load_config(self):
         self.config_path = os.path.join(self.base_dir, "config.yaml")
-
-        # if os.path.isfile(self.config_path):
-        #     print("Found config.yml")
-        # else:
-        #     print("config.yml not found")
-
         try:
             config = ConfigLoader.load(self.config_path)
         except RuntimeError as e:
-            print(f"Error loading config: {e}")
-            raise e
-
+            log.error(f"Error loading config: {e}")
+            exit(1)
         return config
 
     def load_pages(self, pages_path):
         self.pages = []
         self.tag_lists = {}
-
-        page_count = 0
         for root, _, files in os.walk(pages_path):
             # Get the relative path from the pages directory to preserve directory structure in output
             rel_root = os.path.relpath(root, self.pages_path)
@@ -154,7 +149,7 @@ class Builder:
                 try:
                     reader = self._get_reader(filename)
                 except ValueError as e:
-                    print(f"Skipping {filename}: {e}")
+                    log.warning(f"Skipping {filename}: {e}")
                     continue
 
                 metadata, content = reader.read(file_path)
@@ -182,9 +177,8 @@ class Builder:
                 )
 
                 self.pages.append(page)
-                page_count += 1
 
-        print(f"Loaded {page_count} pages")
+        log.info(f"Loaded {len(self.pages)} pages")
 
         # Build lists of pages for the tag list feature
         # For each page, look for a "tags" field in the metadata.
@@ -201,12 +195,10 @@ class Builder:
         output_static_path = os.path.join(self.build_path, "static")
         if os.path.isdir(static_path):
             shutil.copytree(static_path, output_static_path, dirs_exist_ok=True)
+        log.debug(f"Copied static files from {static_path} to {output_static_path}")
 
     def load_templates(self, templates_path):
         pass
-
-    def reload(self, load_static: bool = False):
-        self.load()
 
     def _get_reader(self, filename) -> BaseReader:
         file_ext = os.path.splitext(filename)[-1].lower()
@@ -223,6 +215,8 @@ class Builder:
         Renders all site pages using Jinja2 templates, applies plugins, and writes the output files.
         XXX `load_pages` must be called before this to populate `self.pages`
         """
+
+        start = time.time()
 
         if self.pages is None:
             raise RuntimeError("Pages not loaded. Call load() before build_site().")
@@ -272,10 +266,12 @@ class Builder:
 
             with open(page.output_path, "w", encoding="utf-8") as out_f:
                 out_f.write(rendered)
-            print(
-                f"    Rendered {os.path.relpath(page.file_path, self.pages_path)} -> {page.url}"
-            )
+
+            log.debug(f"Rendered {page.file_path} to {page.output_path}")
 
         # Run plugin after build hook
         for plugin in self.plugins:
             plugin.after_build(self.build_path)
+
+        end = time.time()
+        log.info(f"Build completed in {end - start:.2f} seconds")

@@ -1,20 +1,19 @@
 import os
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
-from turbines.builder import Builder
-
 import threading
+
+from watchfiles import watch
 import tornado.ioloop
 import tornado.web
 import tornado.websocket
 import tornado.httpserver
 
+from turbines.builder import Builder
+import logging
 
-CLIENTS: list[tornado.websocket.WebSocketHandler] = []
-LIVE_RELOAD_SCRIPT = None
+log = logging.getLogger(__name__)
 
 
-def make_reload_script(host: str, port: int) -> str:
+def _make_reload_script(host: str, port: int) -> str:
     return f"""
 <script>
     function connectWebSocket() {{
@@ -24,13 +23,12 @@ def make_reload_script(host: str, port: int) -> str:
                 console.log("Reload message received, reloading page...");
                 window.location.reload();
             }}
-
         }};
         ws.onopen = () => {{
             console.log("LiveReload WebSocket connection established.");
         }};
         ws.onclose = () => {{
-            console.log("LiveReload WebSocket connection closed, reconnecting in 1s...");
+            console.log("LiveReload WebSocket connection closed, reconnecting in 5s...");
             setTimeout(connectWebSocket, 5000);
         }};
     }}
@@ -39,199 +37,191 @@ def make_reload_script(host: str, port: int) -> str:
 """
 
 
-def notify_client_refresh():
-    # print("Notifying clients to reload...")
-    for client in list(CLIENTS):
+def _notify_clients(clients: list) -> None:
+    """Send a reload message to all connected WebSocket clients (must run on the IO loop)."""
+    for client in list(clients):
         try:
             client.write_message("reload")
         except Exception as e:
             print(f"Error notifying client: {e}")
-            CLIENTS.remove(client)
-
-
-class ChangeHandler(FileSystemEventHandler):
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        self._dist_path = os.path.abspath("dist")
-        self._debounce_timer = None
-        self._debounce_delay = 0.3  # seconds
-
-    def set_loop(self, loop):
-        self.__loop = loop
-
-    def set_builder_ref(self, builder: Builder):
-        self._builder = builder
-        self._dist_path = os.path.abspath(self._builder.build_path)
-
-    def _handle_change(self, path):
-        # Ignore changes in the dist directory
-        if path.startswith(self._dist_path):
-            return
-
-        print(f"File change detected in {path}, scheduling reload notification...")
-
-        if self.__loop:
-            self._builder.load()
-            self._builder.render_pages()
-            self.__loop.add_callback(notify_client_refresh)
-
-    def on_modified(self, event):
-        path = os.path.abspath(event.src_path)
-        if event.is_directory:
-            return
-        if self._debounce_timer:
-            self._debounce_timer.cancel()
-        self._debounce_timer = threading.Timer(
-            self._debounce_delay, self._handle_change, args=(path,)
-        )
-        self._debounce_timer.start()
+            clients.remove(client)
 
 
 class LiveReloadWebSocketHandler(tornado.websocket.WebSocketHandler):
-    def open(self, *args, **kwargs):
-        # print("LiveReload client connected.")
-        CLIENTS.append(self)
+    def initialize(self, clients: list) -> None:
+        self._clients = clients
 
-    def on_close(self):
-        CLIENTS.remove(self)
+    def open(self, *args, **kwargs) -> None:
+        self._clients.append(self)
 
-    def on_message(self, message: str | bytes):
-        pass
+    def on_close(self) -> None:
+        self._clients.remove(self)
+
+    def on_message(self, message: str | bytes) -> None:
+        pass  # clients never send messages
 
     def check_origin(self, origin: str) -> bool:
-        return True  # Allow connections from any origin
+        return True  # allow all origins during development
 
 
 class CustomStaticFileHandler(tornado.web.StaticFileHandler):
     """
-    Custom static file handler supporting live reload script injection and URL truncation.
-    Configure with:
-        - inject_reload_script: bool
-        - truncate_urls: bool
+    Static file handler with optional live-reload script injection and
+    extensionless URL support.
+
+    Extra ``initialize`` kwargs:
+        - ``inject_reload_script`` (bool): inject livereload ``<script>`` into HTML.
+        - ``extensionless_urls`` (bool): resolve extensionless paths to ``.html`` files.
+        - ``reload_script`` (str | None): the script tag to inject.
     """
 
     def initialize(
         self,
-        path,
-        default_filename=None,
-        inject_reload_script=False,
-        truncate_urls=False,
-    ):
+        path: str,
+        default_filename: str | None = None,
+        inject_reload_script: bool = False,
+        extensionless_urls: bool = False,
+        reload_script: str | None = None,
+    ) -> None:
         super().initialize(path=path, default_filename=default_filename)
         self.inject_reload_script = inject_reload_script
-        self.truncate_urls = truncate_urls
+        self.extensionless_urls = extensionless_urls
+        self.reload_script = reload_script
 
-    def _inject_reload_script(self, content: str) -> str:
-        assert LIVE_RELOAD_SCRIPT is not None, "LIVE_RELOAD_SCRIPT is not set!"
+    def _inject_script(self, content: str) -> str:
+        assert self.reload_script is not None, "reload_script is not set"
         if "</body>" in content:
-            content = content.replace("</body>", LIVE_RELOAD_SCRIPT + "</body>")
-        else:
-            content += LIVE_RELOAD_SCRIPT
-        return content
+            return content.replace("</body>", self.reload_script + "</body>")
+        return content + self.reload_script
 
-    async def get(self, path, include_body=True):
+    async def get(self, path: str, include_body: bool = True) -> None:
         orig_path = path
-        # Handle URL truncation
+
+        # Resolve directory / extensionless paths to index.html / <name>.html
         if path == "" or path.endswith("/"):
             path = os.path.join(path, "index.html")
-        elif self.truncate_urls:
-            # If extensionless, try .html
-            if not os.path.splitext(path)[1]:
-                html_path = path + ".html"
-                if os.path.exists(html_path):
-                    path = html_path
-                else:
-                    # Try index.html in directory
-                    index_path = os.path.join(path, "index.html")
-                    if os.path.exists(index_path):
-                        path = index_path
+        elif self.extensionless_urls and not os.path.splitext(path)[1]:
+            html_path = os.path.join(self.root, path + ".html")
+            index_path = os.path.join(self.root, path, "index.html")
+            if os.path.exists(html_path):
+                path = path + ".html"
+            elif os.path.exists(index_path):
+                path = os.path.join(path, "index.html")
 
-        # If not HTML, serve as static
+        # Non-HTML files: delegate to the standard handler
         if not path.endswith(".html"):
             await super().get(orig_path, include_body)
             return
 
-        # Serve HTML, possibly injecting reload script
         abs_path = self.get_absolute_path(self.root, path)
         if not os.path.exists(abs_path):
             raise tornado.web.HTTPError(404)
+
         with open(abs_path, "r", encoding="utf-8") as f:
             content = f.read()
-            self.set_header("Content-Type", "text/html; charset=UTF-8")
-            if self.inject_reload_script:
-                content = self._inject_reload_script(content)
-            self.write(content)
-            await self.flush()
+
+        self.set_header("Content-Type", "text/html; charset=UTF-8")
+        if self.inject_reload_script:
+            content = self._inject_script(content)
+        self.write(content)
+        await self.flush()
 
 
-class TurbineServer:
+class TurbinesServer:
     def __init__(self, watch: bool = False, force_files_overwrite: bool = False):
-        self.watch = watch
+        self._watch = watch
+        self._clients: list[tornado.websocket.WebSocketHandler] = []
+        self._reload_script: str | None = None
+        self._stop_event = threading.Event()
+
         self.builder = Builder(
             base_dir=os.getcwd(), force_files_overwrite=force_files_overwrite
         )
         self.builder.load()
         self.builder.render_pages()
 
-    def serve(self, host: str, port: int):
-        os.chdir(self.builder.build_path)
-        print(f"Serving '{self.builder.build_path}' at http://{host}:{port} ...")
-        print("Do not use in production!")
+    def _start_watcher(self, loop: tornado.ioloop.IOLoop) -> None:
+        """Launch a daemon thread that watches source files via watchfiles."""
+        source_dir = os.path.abspath(self.builder.base_dir)
+        build_dir = os.path.abspath(self.builder.build_path)
 
-        # set up live reload script
-        global LIVE_RELOAD_SCRIPT
-        LIVE_RELOAD_SCRIPT = make_reload_script(host, port)
+        log.info(f"Watching for changes in {source_dir}")
 
-        handler = CustomStaticFileHandler
+        def _watch_loop() -> None:
+            for changes in watch(
+                source_dir,
+                stop_event=self._stop_event,
+                raise_interrupt=False,
+            ):
+                # Ignore events that originate inside the build output directory
+                relevant = [
+                    path
+                    for _, path in changes
+                    if not os.path.abspath(path).startswith(build_dir)
+                ]
+                if not relevant:
+                    continue
 
-        # Pass truncate_urls to handler
-        truncate_urls = False
-        if self.builder.config and hasattr(self.builder.config.site, "truncate_urls"):
-            truncate_urls = self.builder.config.site.truncate_urls
+                print()
+                log.info(
+                    f"Changes detected ({len(relevant)} file(s)), rebuilding...",
+                )
+                try:
+                    self.builder.load()
+                    self.builder.render_pages()
+                except Exception as e:
+                    print(f"Build error: {e}")
+                    return
 
-        self.app = tornado.web.Application(
+                # Notify browser clients on the IO thread
+                loop.add_callback(_notify_clients, self._clients)
+
+        thread = threading.Thread(
+            target=_watch_loop, daemon=True, name="turbines-watcher"
+        )
+        thread.start()
+
+    def _build_app(self, host: str, port: int) -> tornado.web.Application:
+        self._reload_script = _make_reload_script(host, port)
+
+        return tornado.web.Application(
             [
-                (r"/_turbines/livereload", LiveReloadWebSocketHandler),
+                (
+                    r"/_turbines/livereload",
+                    LiveReloadWebSocketHandler,
+                    {"clients": self._clients},
+                ),
                 (
                     r"/(.*)",
-                    handler,
+                    CustomStaticFileHandler,
                     {
                         "path": self.builder.build_path,
                         "default_filename": "index.html",
-                        "truncate_urls": truncate_urls,
-                        "inject_reload_script": self.watch,
+                        "extensionless_urls": self.builder.config.site.extensionless_urls,
+                        "inject_reload_script": self._watch,
+                        "reload_script": self._reload_script,
                     },
                 ),
             ]
         )
-        server = tornado.httpserver.HTTPServer(self.app)
-        server.listen(port, address=host)
 
-    def run(self, host: str = "localhost", port: int = 8000):
+    def serve(self, host: str, port: int) -> None:
+        os.chdir(self.builder.build_path)
+        app = self._build_app(host, port)
+        server = tornado.httpserver.HTTPServer(app)
+        server.listen(port, address=host)
+        log.info(f"Serving {self.builder.build_path} at http://{host}:{port}")
+
+    def run(self, host: str = "localhost", port: int = 8000) -> None:
         loop = tornado.ioloop.IOLoop.current()
-        observer = None
-        if self.watch:
-            observer = Observer()
-            handler = ChangeHandler()
-            handler.set_loop(loop)
-            handler.set_builder_ref(self.builder)
-            observer.schedule(handler, path=os.path.join(os.getcwd()), recursive=True)
-            observer.start()
+
+        if self._watch:
+            self._start_watcher(loop)
 
         try:
             self.serve(host, port)
-            tornado.ioloop.IOLoop.current().start()
-        finally:
-            if observer:
-                observer.stop()
-                observer.join()
-
-
-def run_server(
-    watch: bool = False,
-    host: str = "localhost",
-    port: int = 8000,
-    force_files_overwrite: bool = False,
-):
-    server = TurbineServer(watch=watch, force_files_overwrite=force_files_overwrite)
-    server.run(host, port)
+            loop.start()
+        except KeyboardInterrupt:
+            log.info("Shutting down server...")
+            self._stop_event.set()
+            loop.stop()

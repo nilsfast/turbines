@@ -1,11 +1,20 @@
 import os
 from turbines.config_loader import AppConfig
 from abc import ABC, abstractmethod
+from logging import getLogger
+
+log = getLogger(__name__)
 
 
 class PluginBase(ABC):
     def __init__(self, config: AppConfig) -> None:
         self.config: AppConfig = config
+
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Unique name for the plugin, used for configuration and logging."""
+        pass
 
     def before_build(self):
         pass
@@ -28,6 +37,10 @@ class SitemapGenerator(PluginBase):
     def __init__(self, config: AppConfig) -> None:
         super().__init__(config)
         self._urls: list[str] = []
+
+    @property
+    def name(self):
+        return "sitemap_generator"
 
     def set_config(self, config):
         self.config = config
@@ -58,7 +71,7 @@ class SitemapGenerator(PluginBase):
             for url in self._urls:
                 f.write(f"<url><loc>{url}</loc></url>\n")
             f.write("</urlset>\n")
-        print(f"Sitemap generated at {sitemap_path}")
+        log.debug(f"Sitemap generated at {sitemap_path}")
 
         # Generate Robots.txt with the content specified and the sitemap
         if self.config.site.robots_txt.enable:
@@ -67,4 +80,4 @@ class SitemapGenerator(PluginBase):
                 if self.config.site.robots_txt.content:
                     f.write(self.config.site.robots_txt.content + "\n")
                 f.write(f"Sitemap: {self.config.site.url}/sitemap.xml\n")
-            print(f"Robots.txt generated at {robots_path}")
+            log.debug(f"Robots.txt generated at {robots_path}")

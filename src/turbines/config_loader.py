@@ -1,7 +1,11 @@
+import logging
+
 import yaml
 from pathlib import Path
 from typing import Any
 from pydantic import BaseModel, ValidationError
+
+log = logging.getLogger(__name__)  # noqa: F821
 
 
 class RobotsTxtConfig(BaseModel):
@@ -23,7 +27,7 @@ class SiteConfig(BaseModel):
     templates_dir: str = "templates"
     robots_txt: RobotsTxtConfig = RobotsTxtConfig()
     sitemap: SitemapConfig = SitemapConfig()
-    truncate_urls: bool = False
+    extensionless_urls: bool = False
 
 
 class AppConfig(BaseModel):
@@ -38,9 +42,9 @@ class ConfigLoader:
         try:
             with open(path, "r") as f:
                 data = yaml.safe_load(f)
-                print(f"Loaded configuration from {path}")
+                log.info("Loading config…")
         except FileNotFoundError:
-            print(f"Configuration file {path} not found. Using default configuration.")
+            raise RuntimeError(f"Configuration file not found at {path}")
         except yaml.YAMLError as e:
             raise RuntimeError(f"Error parsing configuration file: {e}")
 
