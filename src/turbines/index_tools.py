@@ -27,7 +27,7 @@ class PluginBase(ABC):
 class SitemapGenerator(PluginBase):
     def __init__(self, config: AppConfig) -> None:
         super().__init__(config)
-        self._urls = []
+        self._urls: list[str] = []
 
     def set_config(self, config):
         self.config = config

@@ -10,7 +10,7 @@ import tornado.websocket
 import tornado.httpserver
 
 
-CLIENTS = []
+CLIENTS: list[tornado.websocket.WebSocketHandler] = []
 LIVE_RELOAD_SCRIPT = None
 
 

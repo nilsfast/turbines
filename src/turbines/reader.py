@@ -13,7 +13,7 @@ class BaseReader(ABC):
 class HTMLReader(BaseReader):
     def read(self, filepath) -> tuple[dict, str]:
         with open(filepath, "r", encoding="utf-8") as f:
-            metadata = {}
+            metadata: dict = {}
             first_line = f.readline()
             if first_line.strip() == "---":
                 front_matter_lines = []

@@ -25,4 +25,13 @@ requires = ["uv_build>=0.9.5,<0.10.0"]
 build-backend = "uv_build"
 
 [dependency-groups]
-dev = ["pytest>=9.0.2", "pytest-cov>=7.0.0"]
+dev = [
+    "mypy>=1.19.1",
+    "pytest>=9.0.2",
+    "pytest-cov>=7.0.0",
+    "types-colorama>=0.4.15.20250801",
+    "types-markdown>=3.10.2.20260211",
+    "types-pycurl>=7.45.7.20251101",
+    "types-pygments>=2.19.0.20251121",
+    "types-pyyaml>=6.0.12.20250915",
+]
