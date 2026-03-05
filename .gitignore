@@ -9,5 +9,11 @@ wheels/
 # Virtual environments
 .venv
 
-# Example page
+# Local Example page
 example/
+
+# Coverage file
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
