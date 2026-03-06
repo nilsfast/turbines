@@ -9,7 +9,7 @@ from jinja2_simple_tags import StandaloneTag
 from pydantic.dataclasses import dataclass
 
 from turbines.config_loader import AppConfig, ConfigLoader
-from turbines.index_tools import SitemapGenerator
+from turbines.plugins.sitemap_robots import SitemapGenerator
 from turbines.reader import BaseReader, HTMLReader, MarkdownReader
 
 log = logging.getLogger(__name__)
@@ -82,9 +82,9 @@ class Builder:
         # Load config first
         self.config: AppConfig = self.load_config()
         self.force_files_overwrite = force_files_overwrite
-        self._post_load_config()
+        self._init_after_config()
 
-    def _post_load_config(self):
+    def _init_after_config(self):
         # build path is the output directory for the generated site, default is <base_dir>/dist
         self.build_path = os.path.join(self.base_dir, self.config.site.output_dir)
 
@@ -118,7 +118,6 @@ class Builder:
 
     def load(self):
         self.load_static(self.static_path)
-        self.load_templates(self.templates_path)
         self.load_pages(self.pages_path)
 
     def load_plugins(self):
@@ -192,15 +191,30 @@ class Builder:
             for tag in tags:
                 self.tag_lists.setdefault(tag, []).append(page.metadata)
 
+    def prepare_reload(self, build_subdirectory: str):
+        # Clear the build subdirectory (e.g. assets) to ensure deleted files are removed from the output
+        build_subdir_path = os.path.join(self.build_path, build_subdirectory)
+        if os.path.isdir(build_subdir_path):
+            shutil.rmtree(build_subdir_path)
+            log.debug(f"Cleared build subdirectory {build_subdir_path} for reload")
+        # create the build subdirectory again so that files can be copied to it during reload
+        os.makedirs(build_subdir_path, exist_ok=True)
+
     def load_static(self, static_path):
         # Copy static files to <build_path>/static
         output_static_path = os.path.join(self.build_path, "static")
         if os.path.isdir(static_path):
             shutil.copytree(static_path, output_static_path, dirs_exist_ok=True)
+        else:
+            raise RuntimeError(
+                f"Static path '{static_path}' does not exist or is not a directory."
+            )
         log.debug(f"Copied static files from {static_path} to {output_static_path}")
 
-    def load_templates(self, templates_path):
-        pass
+    def reload_static(self):
+        # Clear static files in the build directory and copy them again from the static directory
+        self.prepare_reload(build_subdirectory="static")
+        self.load_static(self.static_path)
 
     def _get_reader(self, filename) -> BaseReader:
         file_ext = os.path.splitext(filename)[-1].lower()
@@ -212,6 +226,19 @@ class Builder:
         reader = ReaderClass()
         return reader
 
+    def reload_and_render_pages(self):
+        if self.pages is None:
+            raise RuntimeError("Pages not loaded!")
+        # Clear all currently rendered pages as in self.pages
+        for page in self.pages:
+            if os.path.isfile(page.output_path):
+                os.remove(page.output_path)
+                log.debug(f"Deleted rendered page {page.output_path} for reload")
+        # Next, reload all pages
+        self.load_pages(self.pages_path)
+        # Finally, render pages again
+        self.render_pages()
+
     def render_pages(self):
         """
         Renders all site pages using Jinja2 templates, applies plugins, and writes the output files.
@@ -221,10 +248,10 @@ class Builder:
         start = time.time()
 
         if self.pages is None:
-            raise RuntimeError("Pages not loaded. Call load() before build_site().")
+            raise RuntimeError("Pages not loaded!")
 
         if self.config is None:
-            raise RuntimeError("Config not loaded. Call load() before build_site().")
+            raise RuntimeError("Config not loaded!")
 
         # Run plugin before build hook
         for plugin in self.plugins:
@@ -232,7 +259,7 @@ class Builder:
 
         # Set up Jinja2 environment
         env = Environment(
-            loader=FileSystemLoader([self.pages_path, self.templates_path]),
+            loader=FileSystemLoader([self.templates_path]),
             autoescape=select_autoescape(["html", "xml"]),
         )
 

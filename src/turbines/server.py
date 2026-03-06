@@ -85,23 +85,38 @@ class TurbinesServer:
             log.info(
                 f"Changes detected ({len(relevant)} file(s)), rebuilding...",
             )
-
-            log.debug(f"Changed files: {relevant}")
-
-            # If the config is changed, we need to reload it before rendering pages
+            # If the config file is changed, we reload the cofig which triggers a complete re-build of the page
             if any(
                 os.path.abspath(path) == os.path.abspath(self.builder.config_path)
                 for path in relevant
             ):
-                log.warning("Config changed!")
-
+                log.warning("Config changed, reloading config...")
                 self.builder.load_config()
-                self.builder._post_load_config()  # re-apply config settings to builder (e.g. build_path, etc.)
+                self.builder._init_after_config()
+                self.builder.load_static(self.builder.static_path)
 
+            # If static files are changed, we reload them by calling `reload_static` (TODO add optimizations for deletion)
+            if any(
+                os.path.abspath(path).startswith(
+                    os.path.abspath(self.builder.static_path)
+                )
+                for path in relevant
+            ):
+                log.warning("Static files changed, reloading static files...")
+                self.builder.reload_static()
+
+            # If the templates are changed, all pages are reloaded
+            if any(
+                os.path.abspath(path).startswith(
+                    os.path.abspath(self.builder.templates_path)
+                )
+                for path in relevant
+            ):
+                self.builder.reload_and_render_pages()
+
+            # Finally, load and render pages (this will also apply any plugins, etc.)
             try:
-                self.builder.load()
-                self.builder.render_pages()
-
+                self.builder.reload_and_render_pages()
             # TODO catch more specific exceptions from the builder and log them accordingly (e.g. syntax errors in templates, etc.)
             except Exception as e:
                 log.error(f"Build error: {e}")

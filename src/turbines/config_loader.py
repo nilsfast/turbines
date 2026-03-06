@@ -44,9 +44,13 @@ class ConfigLoader:
                 data = yaml.safe_load(f)
                 log.info("Loading config…")
         except FileNotFoundError:
-            raise RuntimeError(f"Configuration file not found at {path}")
+            raise RuntimeError(f"Configuration file not found: {path}")
         except yaml.YAMLError as e:
             raise RuntimeError(f"Error parsing configuration file: {e}")
+
+        if not data:
+            log.warning("Configuration file is empty, using default settings.")
+            return AppConfig()
 
         try:
             return AppConfig(**data)
