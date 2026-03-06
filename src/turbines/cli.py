@@ -75,8 +75,6 @@ def serve(
     try:
         server = TurbinesServer(watch=watch, force_files_overwrite=force)
         server.run(host, port)
-    except RuntimeError as e:
+    except Exception as e:
         log.error(f"Error starting server: {e}")
-        raise typer.Exit(code=1)
-    finally:
         raise typer.Exit(code=1)

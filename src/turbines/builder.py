@@ -81,18 +81,22 @@ class Builder:
         self.pages: list[Page] | None = None
         # Load config first
         self.config: AppConfig = self.load_config()
+        self.force_files_overwrite = force_files_overwrite
+        self._post_load_config()
+
+    def _post_load_config(self):
         # build path is the output directory for the generated site, default is <base_dir>/dist
         self.build_path = os.path.join(self.base_dir, self.config.site.output_dir)
 
         # Check if build directory exists and is not empty
-        if os.path.isdir(self.build_path) and force_files_overwrite:
+        if os.path.isdir(self.build_path) and self.force_files_overwrite:
             # log.info(
             #     f"Force overwrite enabled. Clearing existing files in build directory {self.build_path}"
             # )
             shutil.rmtree(self.build_path)
 
         # If not forcing overwrite, check if the build directory exists and is not empty, and raise an error if so
-        if os.path.isdir(self.build_path) and not force_files_overwrite:
+        if os.path.isdir(self.build_path) and not self.force_files_overwrite:
             raise RuntimeError(f"Build directory '{self.build_path}' is not empty.")
 
         # at this point the directory either doesn't exist or is empty, so we can safely create it

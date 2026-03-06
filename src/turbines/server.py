@@ -1,14 +1,13 @@
+import asyncio
 import os
-import threading
-
-from watchfiles import watch
-import tornado.ioloop
+import logging
 import tornado.web
 import tornado.websocket
 import tornado.httpserver
+from watchfiles import awatch
 
 from turbines.builder import Builder
-import logging
+from turbines.server_handlers import LiveReloadWebSocketHandler, CustomStaticFileHandler
 
 log = logging.getLogger(__name__)
 
@@ -47,92 +46,11 @@ def _notify_clients(clients: list) -> None:
             clients.remove(client)
 
 
-class LiveReloadWebSocketHandler(tornado.websocket.WebSocketHandler):
-    def initialize(self, clients: list) -> None:
-        self._clients = clients
-
-    def open(self, *args, **kwargs) -> None:
-        self._clients.append(self)
-
-    def on_close(self) -> None:
-        self._clients.remove(self)
-
-    def on_message(self, message: str | bytes) -> None:
-        pass  # clients never send messages
-
-    def check_origin(self, origin: str) -> bool:
-        return True  # allow all origins during development
-
-
-class CustomStaticFileHandler(tornado.web.StaticFileHandler):
-    """
-    Static file handler with optional live-reload script injection and
-    extensionless URL support.
-
-    Extra ``initialize`` kwargs:
-        - ``inject_reload_script`` (bool): inject livereload ``<script>`` into HTML.
-        - ``extensionless_urls`` (bool): resolve extensionless paths to ``.html`` files.
-        - ``reload_script`` (str | None): the script tag to inject.
-    """
-
-    def initialize(
-        self,
-        path: str,
-        default_filename: str | None = None,
-        inject_reload_script: bool = False,
-        extensionless_urls: bool = False,
-        reload_script: str | None = None,
-    ) -> None:
-        super().initialize(path=path, default_filename=default_filename)
-        self.inject_reload_script = inject_reload_script
-        self.extensionless_urls = extensionless_urls
-        self.reload_script = reload_script
-
-    def _inject_script(self, content: str) -> str:
-        assert self.reload_script is not None, "reload_script is not set"
-        if "</body>" in content:
-            return content.replace("</body>", self.reload_script + "</body>")
-        return content + self.reload_script
-
-    async def get(self, path: str, include_body: bool = True) -> None:
-        orig_path = path
-
-        # Resolve directory / extensionless paths to index.html / <name>.html
-        if path == "" or path.endswith("/"):
-            path = os.path.join(path, "index.html")
-        elif self.extensionless_urls and not os.path.splitext(path)[1]:
-            html_path = os.path.join(self.root, path + ".html")
-            index_path = os.path.join(self.root, path, "index.html")
-            if os.path.exists(html_path):
-                path = path + ".html"
-            elif os.path.exists(index_path):
-                path = os.path.join(path, "index.html")
-
-        # Non-HTML files: delegate to the standard handler
-        if not path.endswith(".html"):
-            await super().get(orig_path, include_body)
-            return
-
-        abs_path = self.get_absolute_path(self.root, path)
-        if not os.path.exists(abs_path):
-            raise tornado.web.HTTPError(404)
-
-        with open(abs_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-        self.set_header("Content-Type", "text/html; charset=UTF-8")
-        if self.inject_reload_script:
-            content = self._inject_script(content)
-        self.write(content)
-        await self.flush()
-
-
 class TurbinesServer:
     def __init__(self, watch: bool = False, force_files_overwrite: bool = False):
         self._watch = watch
         self._clients: list[tornado.websocket.WebSocketHandler] = []
         self._reload_script: str | None = None
-        self._stop_event = threading.Event()
 
         self.builder = Builder(
             base_dir=os.getcwd(), force_files_overwrite=force_files_overwrite
@@ -140,8 +58,8 @@ class TurbinesServer:
         self.builder.load()
         self.builder.render_pages()
 
-    def _start_watcher(self, loop: tornado.ioloop.IOLoop) -> None:
-        """Launch a daemon thread that watches source files via watchfiles."""
+    async def _watch_loop(self) -> None:
+        """Async coroutine that watches source files via watchfiles."""
         source_dir = os.path.abspath(self.builder.base_dir)
         build_dir = os.path.abspath(self.builder.build_path)
 
@@ -150,50 +68,47 @@ class TurbinesServer:
         # Suppress watchfiles logging to reduce noise during development
         logging.getLogger("watchfiles").setLevel(logging.WARNING)
 
-        def _watch_loop() -> None:
-            for changes in watch(
-                source_dir,
-                stop_event=self._stop_event,
-                raise_interrupt=False,
+        async for changes in awatch(
+            source_dir,
+            raise_interrupt=False,
+        ):
+            # Ignore events that originate inside the build output directory
+            relevant = [
+                path
+                for _, path in changes
+                if not os.path.abspath(path).startswith(build_dir)
+            ]
+            if not relevant:
+                continue
+
+            print()
+            log.info(
+                f"Changes detected ({len(relevant)} file(s)), rebuilding...",
+            )
+
+            log.debug(f"Changed files: {relevant}")
+
+            # If the config is changed, we need to reload it before rendering pages
+            if any(
+                os.path.abspath(path) == os.path.abspath(self.builder.config_path)
+                for path in relevant
             ):
-                # Ignore events that originate inside the build output directory
-                relevant = [
-                    path
-                    for _, path in changes
-                    if not os.path.abspath(path).startswith(build_dir)
-                ]
-                if not relevant:
-                    continue
+                log.warning("Config changed!")
 
-                print()
-                log.info(
-                    f"Changes detected ({len(relevant)} file(s)), rebuilding...",
-                )
+                self.builder.load_config()
+                self.builder._post_load_config()  # re-apply config settings to builder (e.g. build_path, etc.)
 
-                log.info(relevant, self.builder.config_path)
+            try:
+                self.builder.load()
+                self.builder.render_pages()
 
-                # If the config is changed, we need to reload it before rendering pages
-                if any(
-                    os.path.basename(path) == self.builder.config_path
-                    for path in relevant
-                ):
-                    log.warning("Config changed!")
-                try:
-                    self.builder.load()
-                    self.builder.render_pages()
+            # TODO catch more specific exceptions from the builder and log them accordingly (e.g. syntax errors in templates, etc.)
+            except Exception as e:
+                log.error(f"Build error: {e}")
+                continue
 
-                # TODO catch more specific exceptions from the builder and log them accordingly (e.g. syntax errors in templates, etc.)
-                except Exception as e:
-                    log.error(f"Build error: {e}")
-                    return
-
-                # Notify browser clients on the IO thread
-                loop.add_callback(_notify_clients, self._clients)
-
-        thread = threading.Thread(
-            target=_watch_loop, daemon=True, name="turbines-watcher"
-        )
-        thread.start()
+            # Notify browser clients
+            _notify_clients(self._clients)
 
     def _build_tornado_app(self, host: str, port: int) -> tornado.web.Application:
         self._reload_script = _make_reload_script(host, port)
@@ -219,12 +134,13 @@ class TurbinesServer:
             ]
         )
 
-    def serve(self, host: str, port: int) -> None:
+    async def serve(self, host: str, port: int) -> None:
+        if self._watch:
+            log.info("Starting in watch mode with hot-reloading enabled.")
+            asyncio.create_task(self._watch_loop())
+
         # supress tornado access logs to reduce noise during development
         logging.getLogger("tornado").setLevel(logging.WARNING)
-
-        # Change working directory to the build output so that relative links work correctly
-        os.chdir(self.builder.build_path)
 
         # Build and run the Tornado app to serve build output
         app = self._build_tornado_app(host, port)
@@ -232,18 +148,7 @@ class TurbinesServer:
         server.listen(port, address=host)
         log.info(f"Serving {self.builder.build_path} at http://{host}:{port}")
 
+        await asyncio.Event().wait()  # run until interrupted
+
     def run(self, host: str = "localhost", port: int = 8000) -> None:
-        loop = tornado.ioloop.IOLoop.current()
-
-        if self._watch:
-            self._start_watcher(loop)
-
-        try:
-            self.serve(host, port)
-            loop.start()
-        except KeyboardInterrupt:
-            log.info("Shutting down server...")
-            self._stop_event.set()
-            loop.stop()
-        finally:
-            log.info("Server stopped.")
+        asyncio.run(self.serve(host, port))
