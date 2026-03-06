@@ -46,11 +46,10 @@ class Page:
     url: str
 
 
-def initialize_directory(path):
+def initialize_project(path):
     # make a diretory in the specified path if it doesn't exist
     if not os.path.exists(path):
         os.makedirs(path)
-        # print(f"Created directory at {path}")
     else:
         log.info(f"Directory already exists at {path}")
 
@@ -94,9 +93,7 @@ class Builder:
 
         # If not forcing overwrite, check if the build directory exists and is not empty, and raise an error if so
         if os.path.isdir(self.build_path) and not force_files_overwrite:
-            raise ValueError(
-                f"Build directory '{self.build_path}' is not empty. Use force_files_overwrite=True to overwrite."
-            )
+            raise RuntimeError(f"Build directory '{self.build_path}' is not empty.")
 
         # at this point the directory either doesn't exist or is empty, so we can safely create it
         os.makedirs(self.build_path, exist_ok=True)
@@ -112,12 +109,13 @@ class Builder:
         # global context variables available in all templates via {{context.<var>}}
         self.global_context = self.config.context or {}
 
+        # load plugins
+        self.load_plugins()
+
     def load(self):
         self.load_static(self.static_path)
         self.load_templates(self.templates_path)
         self.load_pages(self.pages_path)
-
-        self.load_plugins()
 
     def load_plugins(self):
         # TODO temporary sitemap plugin setup

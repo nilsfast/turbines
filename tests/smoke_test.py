@@ -2,7 +2,7 @@ import os
 import shutil
 from pathlib import Path
 
-from turbines.builder import Builder, initialize_directory
+from turbines.builder import Builder, initialize_project
 
 
 def copy_example_to(tmp_path: Path) -> Path:
@@ -20,7 +20,7 @@ def test_build_example_site(tmp_path: Path):
     cwd_before = Path.cwd()
 
     try:
-        initialize_directory(site_dir)
+        initialize_project(site_dir)
         os.chdir(site_dir)
 
         builder = Builder(base_dir=str(site_dir))

@@ -43,7 +43,7 @@ def _notify_clients(clients: list) -> None:
         try:
             client.write_message("reload")
         except Exception as e:
-            print(f"Error notifying client: {e}")
+            log.error(f"Error notifying client: {e}")
             clients.remove(client)
 
 
@@ -166,11 +166,19 @@ class TurbinesServer:
                 log.info(
                     f"Changes detected ({len(relevant)} file(s)), rebuilding...",
                 )
+
+                # if the config is changed, we need to reload it before rendering pages
+                if any(
+                    os.path.basename(path) == self.builder.config_path
+                    for path in relevant
+                ):
+                    log.warning("Config changed!")
                 try:
                     self.builder.load()
                     self.builder.render_pages()
+                # TODO catch more specific exceptions from the builder and log them accordingly (e.g. syntax errors in templates, etc.)
                 except Exception as e:
-                    print(f"Build error: {e}")
+                    log.error(f"Build error: {e}")
                     return
 
                 # Notify browser clients on the IO thread

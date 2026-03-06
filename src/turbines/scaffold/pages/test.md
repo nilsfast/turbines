@@ -15,12 +15,12 @@ Lorem ipsum dolor sit amet, consetetur sadipscing elitr, sed diam nonumy eirmod 
 
 ## Some features
 
--   most of markdown syntax is supported
--   it uses `Python-Markdown` under the hood
--   **Bullet lists** are easy to create.
--   You can add [links](https://www.example.com).
--   Inline code: `print("Hello, world!")`
--   You can add your own CSS to make this look a bit nicer
+- most of markdown syntax is supported
+- it uses `Python-Markdown` under the hood
+- **Bullet lists** are easy to create.
+- You can add [links](https://www.example.com).
+- Inline code: `print("Hello, world!")`
+- You can add your own CSS to make this look a bit nicer
 
 ### Block code
 
