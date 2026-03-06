@@ -78,3 +78,5 @@ def serve(
     except RuntimeError as e:
         log.error(f"Error starting server: {e}")
         raise typer.Exit(code=1)
+    finally:
+        raise typer.Exit(code=1)

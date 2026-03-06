@@ -147,6 +147,9 @@ class TurbinesServer:
 
         log.info(f"Watching for changes in {source_dir}")
 
+        # Suppress watchfiles logging to reduce noise during development
+        logging.getLogger("watchfiles").setLevel(logging.WARNING)
+
         def _watch_loop() -> None:
             for changes in watch(
                 source_dir,
@@ -167,7 +170,9 @@ class TurbinesServer:
                     f"Changes detected ({len(relevant)} file(s)), rebuilding...",
                 )
 
-                # if the config is changed, we need to reload it before rendering pages
+                log.info(relevant, self.builder.config_path)
+
+                # If the config is changed, we need to reload it before rendering pages
                 if any(
                     os.path.basename(path) == self.builder.config_path
                     for path in relevant
@@ -176,6 +181,7 @@ class TurbinesServer:
                 try:
                     self.builder.load()
                     self.builder.render_pages()
+
                 # TODO catch more specific exceptions from the builder and log them accordingly (e.g. syntax errors in templates, etc.)
                 except Exception as e:
                     log.error(f"Build error: {e}")
@@ -189,7 +195,7 @@ class TurbinesServer:
         )
         thread.start()
 
-    def _build_app(self, host: str, port: int) -> tornado.web.Application:
+    def _build_tornado_app(self, host: str, port: int) -> tornado.web.Application:
         self._reload_script = _make_reload_script(host, port)
 
         return tornado.web.Application(
@@ -214,8 +220,14 @@ class TurbinesServer:
         )
 
     def serve(self, host: str, port: int) -> None:
+        # supress tornado access logs to reduce noise during development
+        logging.getLogger("tornado").setLevel(logging.WARNING)
+
+        # Change working directory to the build output so that relative links work correctly
         os.chdir(self.builder.build_path)
-        app = self._build_app(host, port)
+
+        # Build and run the Tornado app to serve build output
+        app = self._build_tornado_app(host, port)
         server = tornado.httpserver.HTTPServer(app)
         server.listen(port, address=host)
         log.info(f"Serving {self.builder.build_path} at http://{host}:{port}")
@@ -233,3 +245,5 @@ class TurbinesServer:
             log.info("Shutting down server...")
             self._stop_event.set()
             loop.stop()
+        finally:
+            log.info("Server stopped.")
